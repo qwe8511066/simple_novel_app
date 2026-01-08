@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../components/web_service_button.dart';
 import '../components/novel_import_button.dart';
 import '../providers/novel_provider.dart';
@@ -55,14 +57,21 @@ class SettingsPage extends StatelessWidget {
                     onTap: () => _showColorPickerDialog(context),
                   ),
                   _buildSettingItem(
+                    context: context,
+                    icon: Icons.wallpaper,
+                    title: '书架背景',
+                    subtitle: '点击设置书架背景',
+                    onTap: () => _showBookshelfBackgroundDialog(context),
+                  ),
+                  _buildSettingItem(
                      context: context,
                      icon: Icons.brightness_6,
                      title: '夜间模式',
                      subtitle: '当前: ${provider.isDarkMode ? '开启' : '关闭'}',
                      trailing: Switch(
                        value: provider.isDarkMode,
-                       onChanged: (value) {
-                         provider.toggleDarkMode();
+                       onChanged: (value) async {
+                         await provider.toggleDarkMode();
                        },
                      ),
                    ),
@@ -223,8 +232,8 @@ class SettingsPage extends StatelessWidget {
     final provider = Provider.of<NovelProvider>(context, listen: false);
     return ListTile(
       title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-      onTap: () {
-        provider.setFontSize(size);
+      onTap: () async {
+        await provider.setFontSize(size);
         Navigator.pop(context);
       },
     );
@@ -260,9 +269,9 @@ class SettingsPage extends StatelessWidget {
                   Colors.cyan,
                   Colors.deepOrange,
                 ].map((color) => GestureDetector(
-                  onTap: () {
+                  onTap: () async {
                     selectedColor = color;
-                    provider.setThemeColor(color);
+                    await provider.setThemeColor(color);
                     Navigator.pop(context);
                   },
                   child: Container(
@@ -304,8 +313,8 @@ class SettingsPage extends StatelessWidget {
             child: Text('取消', style: Theme.of(context).textTheme.bodyMedium),
           ),
           TextButton(
-            onPressed: () {
-              provider.setThemeColor(selectedColor);
+            onPressed: () async {
+              await provider.setThemeColor(selectedColor);
               Navigator.pop(context);
             },
             child: Text('确认', style: Theme.of(context).textTheme.bodyMedium),
@@ -313,5 +322,189 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
+  }
+  
+  void _showBookshelfBackgroundDialog(BuildContext context) {
+    final provider = Provider.of<NovelProvider>(context, listen: false);
+    Color selectedColor = provider.bookshelfBackgroundColor;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('书架背景设置', style: Theme.of(context).textTheme.titleMedium),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 选择背景类型
+              Text('选择背景类型:', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                alignment: WrapAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _showBookshelfColorPicker(context),
+                    icon: const Icon(Icons.color_lens),
+                    label: const Text('背景颜色'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _showBookshelfImagePicker(context),
+                    icon: const Icon(Icons.image),
+                    label: const Text('背景图片'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // 当前背景预览
+              Text('当前背景:', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                height: 150,
+                decoration: BoxDecoration(
+                  color: provider.bookshelfBackgroundImage == null 
+                      ? provider.bookshelfBackgroundColor 
+                      : null,
+                  image: provider.bookshelfBackgroundImage != null
+                      ? DecorationImage(
+                          image: FileImage(File(provider.bookshelfBackgroundImage!)),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: provider.bookshelfBackgroundImage == null
+                    ? Center(
+                        child: Text(
+                          '纯色背景',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(0.5),
+                                offset: const Offset(1, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('关闭', style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showBookshelfColorPicker(BuildContext context) {
+    final provider = Provider.of<NovelProvider>(context, listen: false);
+    Color selectedColor = provider.bookshelfBackgroundColor;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('选择书架背景色', style: Theme.of(context).textTheme.titleMedium),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 预定义颜色选项
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  Colors.white,
+                  Colors.grey[100],
+                  Colors.grey[200],
+                  Colors.grey[300],
+                  Colors.blue[50],
+                  Colors.green[50],
+                  Colors.yellow[50],
+                  Colors.red[50],
+                  Colors.purple[50],
+                  Colors.teal[50],
+                  Colors.cyan[50],
+                  Colors.orange[50],
+                  Colors.brown[50],
+                  Colors.black,
+                  Colors.grey[800],
+                  Colors.grey[900],
+                ].map((color) => GestureDetector(
+                  onTap: () async {
+                    if (color != null) {
+                      selectedColor = color;
+                      await provider.setBookshelfBackgroundColor(color);
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: selectedColor == color ? Colors.black : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                )).toList(),
+              ),
+              const SizedBox(height: 16),
+              // 自定义颜色选择器
+              Text('或自定义颜色:', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 200,
+                child: ColorPicker(
+                  pickerColor: selectedColor,
+                  onColorChanged: (color) {
+                    selectedColor = color;
+                  },
+                  showLabel: true,
+                  pickerAreaHeightPercent: 0.8,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('取消', style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          TextButton(
+            onPressed: () async {
+              await provider.setBookshelfBackgroundColor(selectedColor);
+              Navigator.pop(context);
+            },
+            child: Text('确认', style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showBookshelfImagePicker(BuildContext context) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null) {
+      final provider = Provider.of<NovelProvider>(context, listen: false);
+      await provider.setBookshelfBackgroundImage(image.path);
+    }
   }
 }

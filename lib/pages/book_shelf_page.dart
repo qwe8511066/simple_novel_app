@@ -14,6 +14,8 @@ class BookshelfPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final novelProvider = context.watch<NovelProvider>();
     final favorites = novelProvider.favoriteNovels;
+    final backgroundImage = novelProvider.bookshelfBackgroundImage;
+    final backgroundColor = novelProvider.bookshelfBackgroundColor;
 
     if (favorites.isEmpty) {
       return Center(
@@ -38,13 +40,32 @@ class BookshelfPage extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: favorites.length,
-      itemBuilder: (context, index) {
-        final novel = favorites[index];
-        return _buildBookItem(context, novel);
-      },
+    return Container(
+        // 设置书架背景
+        decoration: BoxDecoration(
+          color: backgroundImage == null ? backgroundColor : null,
+          image: backgroundImage != null
+              ? DecorationImage(
+                  image: FileImage(File(backgroundImage)),
+                  fit: BoxFit.cover,
+                )
+              : null,
+        ),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            // 重新加载本地小说数据
+            final novelProvider = Provider.of<NovelProvider>(context, listen: false);
+            await novelProvider.init();
+          },
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: favorites.length,
+            itemBuilder: (context, index) {
+              final novel = favorites[index];
+              return _buildBookItem(context, novel);
+            },
+          ),
+        ),
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/novel.dart';
 
 /// 小说状态管理类
@@ -13,6 +14,8 @@ class NovelProvider with ChangeNotifier {
   bool _isDarkMode = false;
   double _fontSize = 14;
   Color _themeColor = Colors.blue; // 默认主题色
+  Color _bookshelfBackgroundColor = Colors.white; // 默认书架背景色
+  String? _bookshelfBackgroundImage; // 书架背景图片路径
 
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
@@ -29,10 +32,73 @@ class NovelProvider with ChangeNotifier {
   /// 获取当前主题色
   Color get themeColor => _themeColor;
   
-  /// 初始化 - 加载本地小说
+  /// 获取书架背景色
+  Color get bookshelfBackgroundColor => _bookshelfBackgroundColor;
+  
+  /// 获取书架背景图片路径
+  String? get bookshelfBackgroundImage => _bookshelfBackgroundImage;
+  
+  /// 初始化 - 加载本地小说和用户配置
   Future<void> init() async {
     await _ensureNovelDirectory();
+    await _loadConfig();
     await _loadNovelsFromLocal();
+  }
+  
+  /// 加载用户配置
+  Future<void> _loadConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 加载夜间模式
+    _isDarkMode = prefs.getBool('isDarkMode') ?? false;
+    
+    // 加载字体大小
+    _fontSize = prefs.getDouble('fontSize') ?? 14;
+    
+    // 加载主题色
+    final themeColorHex = prefs.getString('themeColor');
+    if (themeColorHex != null) {
+      _themeColor = Color(int.parse(themeColorHex, radix: 16));
+    } else {
+      _themeColor = Colors.blue;
+    }
+    
+    // 加载书架背景色
+    final bookshelfColorHex = prefs.getString('bookshelfBackgroundColor');
+    if (bookshelfColorHex != null) {
+      _bookshelfBackgroundColor = Color(int.parse(bookshelfColorHex, radix: 16));
+    } else {
+      _bookshelfBackgroundColor = Colors.white;
+    }
+    
+    // 加载书架背景图片路径
+    _bookshelfBackgroundImage = prefs.getString('bookshelfBackgroundImage');
+    
+    notifyListeners();
+  }
+  
+  /// 保存用户配置
+  Future<void> _saveConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 保存夜间模式
+    await prefs.setBool('isDarkMode', _isDarkMode);
+    
+    // 保存字体大小
+    await prefs.setDouble('fontSize', _fontSize);
+    
+    // 保存主题色
+    await prefs.setString('themeColor', _themeColor.value.toRadixString(16));
+    
+    // 保存书架背景色
+    await prefs.setString('bookshelfBackgroundColor', _bookshelfBackgroundColor.value.toRadixString(16));
+    
+    // 保存书架背景图片路径
+    if (_bookshelfBackgroundImage != null) {
+      await prefs.setString('bookshelfBackgroundImage', _bookshelfBackgroundImage!);
+    } else {
+      await prefs.remove('bookshelfBackgroundImage');
+    }
   }
   
   /// 确保小说目录存在
@@ -92,6 +158,7 @@ class NovelProvider with ChangeNotifier {
     // 添加新发现的小说到收藏列表
     if (loadedNovels.isNotEmpty) {
       _favoriteNovels.addAll(loadedNovels);
+      _sortNovels();
       notifyListeners();
     }
   }
@@ -99,7 +166,12 @@ class NovelProvider with ChangeNotifier {
   /// 添加到收藏
   void addToFavorites(Novel novel) {
     if (!_favoriteNovels.any((n) => n.id == novel.id)) {
-      _favoriteNovels.add(novel);
+      // 设置上传时间为当前时间
+      final updatedNovel = novel.copyWith(
+        lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+      );
+      _favoriteNovels.add(updatedNovel);
+      _sortNovels();
       notifyListeners();
     }
   }
@@ -111,27 +183,46 @@ class NovelProvider with ChangeNotifier {
   }
   
   /// 切换夜间模式
-  void toggleDarkMode() {
+  Future<void> toggleDarkMode() async {
     _isDarkMode = !_isDarkMode;
+    await _saveConfig();
     notifyListeners();
   }
   
   /// 设置夜间模式
-  void setDarkMode(bool isDark) {
+  Future<void> setDarkMode(bool isDark) async {
     _isDarkMode = isDark;
+    await _saveConfig();
     notifyListeners();
   }
   
   /// 设置字体大小
-  void setFontSize(double size) {
+  Future<void> setFontSize(double size) async {
     _fontSize = size;
+    await _saveConfig();
     notifyListeners();
   }
   
   /// 设置主题色
-  void setThemeColor(Color color) {
+  Future<void> setThemeColor(Color color) async {
     _themeColor = color;
+    await _saveConfig();
     notifyListeners();
+  }
+  
+  /// 设置书架背景色
+  Future<void> setBookshelfBackgroundColor(Color color) async {
+    _bookshelfBackgroundColor = color;
+    _bookshelfBackgroundImage = null; // 清除背景图片
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置书架背景图片
+  Future<void> setBookshelfBackgroundImage(String? imagePath) async {
+    _bookshelfBackgroundImage = imagePath;
+    notifyListeners();
+    await _saveConfig();
   }
 
   /// 切换收藏状态
@@ -148,6 +239,15 @@ class NovelProvider with ChangeNotifier {
     return _favoriteNovels.any((novel) => novel.id == novelId);
   }
 
+  /// 对小说列表进行排序
+  /// 最新上传的在前面，然后按最近的阅读时间排序
+  void _sortNovels() {
+    _favoriteNovels.sort((a, b) {
+      // 按lastUpdateTime降序排序，最新的在前面
+      return b.lastUpdateTime.compareTo(a.lastUpdateTime);
+    });
+  }
+
   /// 更新阅读进度
   void updateReadingProgress(String novelId, int chapter, double scrollProgress) {
     final index = _favoriteNovels.indexWhere((n) => n.id == novelId);
@@ -156,7 +256,9 @@ class NovelProvider with ChangeNotifier {
       _favoriteNovels[index] = novel.copyWith(
         currentChapter: chapter,
         scrollProgress: scrollProgress,
+        lastUpdateTime: DateTime.now().millisecondsSinceEpoch, // 更新阅读时间
       );
+      _sortNovels();
       notifyListeners();
     }
 

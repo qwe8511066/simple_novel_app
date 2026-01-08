@@ -13,7 +13,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import '../models/novel.dart';
 import '../providers/novel_provider.dart';
-
+import './web_server_manager.dart';
 /// ===============================
 /// Web 小说导入按钮（成品版）
 /// ===============================
@@ -437,24 +437,29 @@ class _WebServiceButtonState extends State<WebServiceButton> {
         }
 
         // 保存到小说目录
-        final targetFile = File('${_novelDirPath!}/$fileName');
-        await targetFile.writeAsString(content);
+        if (_novelDirPath != null) {
+          final targetFile = File('${_novelDirPath}/$fileName');
+          await targetFile.writeAsString(content);
 
-        // 创建Novel对象并添加到书架
-        final novel = Novel(
-          id: fileName,
-          title: fileName.replaceAll('.txt', ''),
-          author: '本地导入',
-          coverUrl: '',
-          description: '本地导入的小说',
-          chapterCount: 1,
-          category: '本地',
-          lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
-          lastChapterTitle: '第一章',
-        );
+          // 创建Novel对象并添加到书架
+          final novel = Novel(
+            id: fileName,
+            title: fileName.replaceAll('.txt', ''),
+            author: '本地导入',
+            coverUrl: '',
+            description: '本地导入的小说',
+            chapterCount: 1,
+            category: '本地',
+            lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+            lastChapterTitle: '第一章',
+          );
 
-        novelProvider.addToFavorites(novel);
-        successCount++;
+          novelProvider.addToFavorites(novel);
+          successCount++;
+          // ✅ 确保导入完成后再启动 Web 服务 
+          final serverManager = WebServerManager();
+          await serverManager.start(_novelDirPath!);
+        }
       }
 
       // 显示导入结果
@@ -576,7 +581,7 @@ async function upload(){
     const text=await res.text();
     
     if(res.ok){
-      showMsg(`✅ 上传成功！<br>📄 文件：\${selectedFile.name}<br>💾 已保存到小说目录<br><br><strong>提示：返回App点击"刷新"按钮查看导入的小说</strong>`,'success');
+      showMsg(`✅ 上传成功！<br>📄 文件：\${selectedFile.name}<br>💾 已保存到小说目录<br><br><strong>提示：返回App<span style="color:red">下拉刷新</span>查看导入的小说</strong>`,'success');
     }else{
       showMsg(`❌ 上传失败：\${text}`,'error');
     }
