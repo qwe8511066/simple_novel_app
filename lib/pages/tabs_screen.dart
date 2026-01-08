@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'book_shelf_page.dart';
 import 'settings_page.dart';
+import '../components/novel_import_button.dart';
 
 /// 底部标签页（书架 + 设置）
 class TabsScreen extends StatefulWidget {
@@ -34,6 +35,14 @@ class _TabsScreenState extends State<TabsScreen> {
       appBar: AppBar(
         title: Text(_titles[_currentIndex]),
         centerTitle: true,
+        actions: [
+          // 只在书架页面显示导入小说按钮
+          if (_currentIndex == 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: NovelImportButton(),
+            ),
+        ],
       ),
       body: _pages[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -43,7 +52,7 @@ class _TabsScreenState extends State<TabsScreen> {
             _currentIndex = index;
           });
         },
-        selectedItemColor: Colors.blue,
+        selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey,
         showSelectedLabels: true,
         showUnselectedLabels: true,

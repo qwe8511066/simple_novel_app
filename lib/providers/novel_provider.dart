@@ -1,16 +1,100 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import '../models/novel.dart';
 
 /// 小说状态管理类
 class NovelProvider with ChangeNotifier {
   List<Novel> _favoriteNovels = [];
   List<Novel> _recentNovels = [];
+  String? _novelDirPath;
+  bool _isDarkMode = false;
+  double _fontSize = 14;
+  Color _themeColor = Colors.blue; // 默认主题色
 
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
 
   /// 获取最近阅读的小说列表
   List<Novel> get recentNovels => _recentNovels;
+  
+  /// 获取当前是否为夜间模式
+  bool get isDarkMode => _isDarkMode;
+  
+  /// 获取当前字体大小
+  double get fontSize => _fontSize;
+  
+  /// 获取当前主题色
+  Color get themeColor => _themeColor;
+  
+  /// 初始化 - 加载本地小说
+  Future<void> init() async {
+    await _ensureNovelDirectory();
+    await _loadNovelsFromLocal();
+  }
+  
+  /// 确保小说目录存在
+  Future<void> _ensureNovelDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final novelDir = Directory('${appDir.path}/novels');
+    
+    if (!novelDir.existsSync()) {
+      await novelDir.create(recursive: true);
+    }
+    
+    _novelDirPath = novelDir.path;
+  }
+  
+  /// 从本地加载小说
+  Future<void> _loadNovelsFromLocal() async {
+    if (_novelDirPath == null) return;
+    
+    final dir = Directory(_novelDirPath!);
+    if (!dir.existsSync()) return;
+    
+    // 读取目录中的所有.txt文件
+    final files = dir.listSync()
+        .where((entity) => entity is File && entity.path.endsWith('.txt'))
+        .cast<File>();
+    
+    final loadedNovels = <Novel>[];
+    
+    for (final file in files) {
+      try {
+        // 使用basename函数获取文件名，这在所有平台上都有效
+        final filename = path.basename(file.path);
+        final id = filename;
+        final title = filename.replaceAll('.txt', '');
+        
+        // 检查小说是否已存在
+        if (!_favoriteNovels.any((n) => n.id == id)) {
+          final novel = Novel(
+            id: id,
+            title: title,
+            author: '本地导入',
+            coverUrl: '',
+            description: '本地导入的小说',
+            chapterCount: 1,
+            category: '本地',
+            lastUpdateTime: file.lastModifiedSync().millisecondsSinceEpoch,
+            lastChapterTitle: '第一章',
+          );
+          
+          loadedNovels.add(novel);
+        }
+      } catch (e) {
+        print('加载小说文件失败: $e');
+      }
+    }
+    
+    // 添加新发现的小说到收藏列表
+    if (loadedNovels.isNotEmpty) {
+      _favoriteNovels.addAll(loadedNovels);
+      notifyListeners();
+    }
+  }
 
   /// 添加到收藏
   void addToFavorites(Novel novel) {
@@ -23,6 +107,30 @@ class NovelProvider with ChangeNotifier {
   /// 从收藏中移除
   void removeFromFavorites(String novelId) {
     _favoriteNovels.removeWhere((novel) => novel.id == novelId);
+    notifyListeners();
+  }
+  
+  /// 切换夜间模式
+  void toggleDarkMode() {
+    _isDarkMode = !_isDarkMode;
+    notifyListeners();
+  }
+  
+  /// 设置夜间模式
+  void setDarkMode(bool isDark) {
+    _isDarkMode = isDark;
+    notifyListeners();
+  }
+  
+  /// 设置字体大小
+  void setFontSize(double size) {
+    _fontSize = size;
+    notifyListeners();
+  }
+  
+  /// 设置主题色
+  void setThemeColor(Color color) {
+    _themeColor = color;
     notifyListeners();
   }
 
