@@ -4,7 +4,6 @@ import 'providers/novel_provider.dart';
 import 'pages/tabs_screen.dart';
 import 'pages/reader/reader_page.dart';
 import 'pages/reader/reader_controller.dart';
-import 'pages/reader/text_segment_loader.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
@@ -128,6 +127,7 @@ class _MyAppState extends State<MyApp> {
                   ModalRoute.of(context)!.settings.arguments
                       as Map<String, dynamic>;
               final novelId = args['novelId'] as String;
+              final novelTitle = args['novelTitle'] as String?;
 
               return FutureBuilder<String>(
                 future: _getNovelFilePath(novelId),
@@ -141,9 +141,9 @@ class _MyAppState extends State<MyApp> {
                   }
 
                   final file = File(snapshot.data!);
-                  final controller = ReaderController(file);
+                  final controller = ReaderController(file, novelTitle: novelTitle);
 
-                  return ReaderPage(controller:controller);
+                  return ReaderPage(controller: controller, novelId: novelId);
                 },
               );
             },

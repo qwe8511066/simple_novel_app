@@ -81,12 +81,13 @@ class BookshelfPage extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () {
-          // 直接导航到阅读器页面
+          // 导航到阅读器页面
           Navigator.pushNamed(
             context,
             '/reader',
             arguments: {
               'novelId': novel.id,
+              'novelTitle': novel.title,
               'chapterIndex': novel.currentChapter ?? 0,
             },
           );
