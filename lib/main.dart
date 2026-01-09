@@ -31,11 +31,11 @@ class _MyAppState extends State<MyApp> {
     final novelDir = Directory('${dir.path}/novels');
     return '${novelDir.path}/$novelId';
   }
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     // 应用启动时加载本地小说
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<NovelProvider>(context, listen: false).init();
@@ -53,13 +53,34 @@ class _MyAppState extends State<MyApp> {
             brightness: Brightness.light,
             primaryColor: provider.themeColor,
             textTheme: ThemeData.light().textTheme.copyWith(
-              bodyLarge: TextStyle(fontSize: provider.fontSize.toDouble(), color: Colors.black87),
-              bodyMedium: TextStyle(fontSize: (provider.fontSize - 2).toDouble(), color: Colors.black87),
-              bodySmall: TextStyle(fontSize: (provider.fontSize - 4).toDouble(), color: Colors.black54),
-              titleLarge: TextStyle(fontSize: (provider.fontSize + 8).toDouble(), color: provider.themeColor),
-              titleMedium: TextStyle(fontSize: (provider.fontSize + 4).toDouble(), color: provider.themeColor),
-              titleSmall: TextStyle(fontSize: (provider.fontSize).toDouble(), color: provider.themeColor),
-              headlineSmall: TextStyle(fontSize: (provider.fontSize + 6).toDouble(), color: provider.themeColor),
+              bodyLarge: TextStyle(
+                fontSize: provider.fontSize.toDouble(),
+                color: Colors.black87,
+              ),
+              bodyMedium: TextStyle(
+                fontSize: (provider.fontSize - 2).toDouble(),
+                color: Colors.black87,
+              ),
+              bodySmall: TextStyle(
+                fontSize: (provider.fontSize - 4).toDouble(),
+                color: Colors.black54,
+              ),
+              titleLarge: TextStyle(
+                fontSize: (provider.fontSize + 8).toDouble(),
+                color: provider.themeColor,
+              ),
+              titleMedium: TextStyle(
+                fontSize: (provider.fontSize + 4).toDouble(),
+                color: provider.themeColor,
+              ),
+              titleSmall: TextStyle(
+                fontSize: (provider.fontSize).toDouble(),
+                color: provider.themeColor,
+              ),
+              headlineSmall: TextStyle(
+                fontSize: (provider.fontSize + 6).toDouble(),
+                color: provider.themeColor,
+              ),
             ),
             iconTheme: IconThemeData(color: provider.themeColor),
           ),
@@ -68,13 +89,34 @@ class _MyAppState extends State<MyApp> {
             brightness: Brightness.dark,
             primaryColor: provider.themeColor,
             textTheme: ThemeData.dark().textTheme.copyWith(
-              bodyLarge: TextStyle(fontSize: provider.fontSize.toDouble(), color: Colors.white),
-              bodyMedium: TextStyle(fontSize: (provider.fontSize - 2).toDouble(), color: Colors.white),
-              bodySmall: TextStyle(fontSize: (provider.fontSize - 4).toDouble(), color: Colors.white70),
-              titleLarge: TextStyle(fontSize: (provider.fontSize + 8).toDouble(), color: provider.themeColor),
-              titleMedium: TextStyle(fontSize: (provider.fontSize + 4).toDouble(), color: provider.themeColor),
-              titleSmall: TextStyle(fontSize: (provider.fontSize).toDouble(), color: provider.themeColor),
-              headlineSmall: TextStyle(fontSize: (provider.fontSize + 6).toDouble(), color: provider.themeColor),
+              bodyLarge: TextStyle(
+                fontSize: provider.fontSize.toDouble(),
+                color: Colors.white,
+              ),
+              bodyMedium: TextStyle(
+                fontSize: (provider.fontSize - 2).toDouble(),
+                color: Colors.white,
+              ),
+              bodySmall: TextStyle(
+                fontSize: (provider.fontSize - 4).toDouble(),
+                color: Colors.white70,
+              ),
+              titleLarge: TextStyle(
+                fontSize: (provider.fontSize + 8).toDouble(),
+                color: provider.themeColor,
+              ),
+              titleMedium: TextStyle(
+                fontSize: (provider.fontSize + 4).toDouble(),
+                color: provider.themeColor,
+              ),
+              titleSmall: TextStyle(
+                fontSize: (provider.fontSize).toDouble(),
+                color: provider.themeColor,
+              ),
+              headlineSmall: TextStyle(
+                fontSize: (provider.fontSize + 6).toDouble(),
+                color: provider.themeColor,
+              ),
             ),
             iconTheme: IconThemeData(color: provider.themeColor),
           ),
@@ -82,25 +124,26 @@ class _MyAppState extends State<MyApp> {
           home: const TabsScreen(),
           routes: {
             '/reader': (context) {
-              final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+              final args =
+                  ModalRoute.of(context)!.settings.arguments
+                      as Map<String, dynamic>;
               final novelId = args['novelId'] as String;
-              
+
               return FutureBuilder<String>(
                 future: _getNovelFilePath(novelId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  
+
                   if (snapshot.hasError || snapshot.data == null) {
                     return const Center(child: Text('无法加载小说'));
                   }
-                  
+
                   final file = File(snapshot.data!);
-                  final loader = TextSegmentLoader(file);
-                  final controller = ReaderController(loader);
-                  
-                  return ReaderPage(controller: controller);
+                  final controller = ReaderController(file);
+
+                  return ReaderPage(controller:controller);
                 },
               );
             },

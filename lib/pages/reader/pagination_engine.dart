@@ -1,43 +1,35 @@
-// pagination_engine.dart
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 class PaginationEngine {
+  final List<String> lines;
   final TextStyle style;
-  final Size pageSize;
+  final Size size;
 
-  PaginationEngine({
-    required this.style,
-    required this.pageSize,
-  });
+  PaginationEngine(this.lines, this.style, this.size);
 
-  /// 返回：每一页的起始 offset
-  List<int> paginate(String text) {
-    final List<int> offsets = [0];
+  List<List<String>> paginate() {
+    final pages = <List<String>>[];
+    var page = <String>[];
+    double height = 0;
 
-    final painter = TextPainter(
-      textDirection: TextDirection.ltr,
-    );
+    for (final line in lines) {
+      final tp = TextPainter(
+        text: TextSpan(text: line, style: style),
+        maxLines: null,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width - 32);
 
-    int start = 0;
+      if (height + tp.height > size.height - 32) {
+        pages.add(page);
+        page = [];
+        height = 0;
+      }
 
-    while (start < text.length) {
-      painter.text = TextSpan(
-        text: text.substring(start),
-        style: style,
-      );
-      painter.layout(maxWidth: pageSize.width);
-
-      final pos = painter.getPositionForOffset(
-        Offset(0, pageSize.height),
-      );
-
-      final end = start + pos.offset;
-      if (end <= start) break;
-
-      offsets.add(end);
-      start = end;
+      page.add(line);
+      height += tp.height;
     }
 
-    return offsets;
+    if (page.isNotEmpty) pages.add(page);
+    return pages;
   }
 }
