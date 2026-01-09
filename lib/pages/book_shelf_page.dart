@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../providers/novel_provider.dart';
 import '../models/novel.dart';
 
+
 /// 书架页面
 class BookshelfPage extends StatelessWidget {
   const BookshelfPage({super.key});
@@ -80,12 +81,13 @@ class BookshelfPage extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () {
+          // 直接导航到阅读器页面
           Navigator.pushNamed(
             context,
             '/reader',
             arguments: {
               'novelId': novel.id,
-              'chapterIndex': currentChapter,
+              'chapterIndex': novel.currentChapter ?? 0,
             },
           );
         },

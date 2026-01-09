@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
 import 'package:file_picker/file_picker.dart';
@@ -95,23 +97,8 @@ class NovelImportButton extends StatelessWidget {
         final bytes = await sourceFile.readAsBytes();
         String content;
         
-        try {
-          // 先尝试UTF-8编码
-          content = utf8.decode(bytes);
-        } catch (e) {
-          try {
-            // 尝试GBK编码（中文常用编码）
-            content = await CharsetConverter.decode("GBK", bytes);
-          } catch (e) {
-            try {
-              // 尝试GB2312编码
-              content = await CharsetConverter.decode("GB2312", bytes);
-            } catch (e) {
-              // 最后尝试Latin1编码
-              content = latin1.decode(bytes);
-            }
-          }
-        }
+        // 智能检测编码
+        content = await _decodeWithAutoDetect(bytes);
 
         // 保存到小说目录
         final targetFile = File('$novelDirPath/$fileName');
@@ -178,5 +165,140 @@ class NovelImportButton extends StatelessWidget {
 
     await prefs.setString('novel_dir_path', novelDir.path);
     return novelDir.path;
+  }
+
+  /// ===============================
+  /// 智能检测编码并解码
+  /// ===============================
+  static Future<String> _decodeWithAutoDetect(Uint8List bytes) async {
+    if (bytes.isEmpty) return '';
+    
+    // 1. 检查BOM (Byte Order Mark)
+    if (bytes.length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) {
+      // UTF-8 with BOM
+      return utf8.decode(bytes.sublist(3), allowMalformed: true);
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) {
+      // UTF-16 LE
+      try {
+        return await CharsetConverter.decode('utf-16le', bytes.sublist(2));
+      } catch (_) {
+        // fallback
+      }
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) {
+      // UTF-16 BE
+      try {
+        return await CharsetConverter.decode('utf-16be', bytes.sublist(2));
+      } catch (_) {
+        // fallback
+      }
+    }
+    
+    // 2. 尝试严格UTF-8解码
+    try {
+      final result = utf8.decode(bytes, allowMalformed: false);
+      // 检查是否包含常见乱码模式（GBK被UTF-8误读）
+      if (!_containsGarbledPattern(result)) {
+        return result;
+      }
+    } catch (_) {
+      // UTF-8解码失败
+    }
+    
+    // 3. 检测是否为GBK/GB18030编码
+    if (_isLikelyGBK(bytes)) {
+      try {
+        final result = await CharsetConverter.decode('gbk', bytes);
+        // 检查解码结果是否合理
+        if (_isValidChineseText(result)) {
+          return result;
+        }
+      } catch (_) {
+        // GBK解码失败
+      }
+    }
+    
+    // 4. 尝试GB18030（更完整的中文编码）
+    try {
+      final result = await CharsetConverter.decode('gb18030', bytes);
+      if (_isValidChineseText(result)) {
+        return result;
+      }
+    } catch (_) {}
+    
+    // 5. 最后尝试GBK
+    try {
+      return await CharsetConverter.decode('gbk', bytes);
+    } catch (_) {}
+    
+    // 6. 完全失败，使用容错模式UTF-8
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+  
+  /// 检查文本是否包含常见的乱码模式
+  static bool _containsGarbledPattern(String text) {
+    // 常见的GBK被UTF-8误读产生的乱码字符
+    final garbledPatterns = [
+      'ä¸', 'å¤', 'æ', 'ç»', 'è¯', 'é¡', // 常见乱码前缀
+      'ï¿½', // 替换字符
+      'Ã¤', 'Ã¥', 'Ã¦', 'Ã§', 'Ã¨', 'Ã©', // 另一种乱码模式
+    ];
+    
+    for (final pattern in garbledPatterns) {
+      if (text.contains(pattern)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  /// 检测字节序列是否可能是GBK编码
+  static bool _isLikelyGBK(Uint8List bytes) {
+    int gbkPatternCount = 0;
+    int totalHighBytes = 0;
+    
+    for (int i = 0; i < bytes.length - 1; i++) {
+      final b1 = bytes[i];
+      final b2 = bytes[i + 1];
+      
+      if (b1 >= 0x80) {
+        totalHighBytes++;
+      }
+      
+      // GBK双字节范围：第一字节 0x81-0xFE，第二字节 0x40-0xFE
+      if (b1 >= 0x81 && b1 <= 0xFE && b2 >= 0x40 && b2 <= 0xFE && b2 != 0x7F) {
+        gbkPatternCount++;
+        i++; // 跳过第二个字节
+      }
+    }
+    
+    // 如果GBK模式占高字节的大部分，可能是GBK
+    return totalHighBytes > 0 && gbkPatternCount > totalHighBytes * 0.3;
+  }
+  
+  /// 检查解码结果是否是有效的中文文本
+  static bool _isValidChineseText(String text) {
+    if (text.isEmpty) return false;
+    
+    // 检查是否包含有效的中文字符
+    int chineseCount = 0;
+    int garbledCount = 0;
+    
+    final sampleSize = min(1000, text.length);
+    for (int i = 0; i < sampleSize; i++) {
+      final code = text.codeUnitAt(i);
+      // 中文字符范围
+      if (code >= 0x4E00 && code <= 0x9FFF) {
+        chineseCount++;
+      }
+      // 常见乱码字符
+      if (code == 0xFFFD || (code >= 0x80 && code <= 0xFF)) {
+        garbledCount++;
+      }
+    }
+    
+    // 如果中文字符超过乱码字符，认为是有效文本
+    return chineseCount > garbledCount;
   }
 }

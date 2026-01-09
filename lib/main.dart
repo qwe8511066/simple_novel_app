@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/novel_provider.dart';
 import 'pages/tabs_screen.dart';
-import 'pages/reader_page.dart';
+import 'pages/reader/reader_page.dart';
+import 'pages/reader/reader_controller.dart';
+import 'pages/reader/text_segment_loader.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 void main() {
   runApp(
@@ -21,6 +25,13 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+  // 获取小说文件路径
+  Future<String> _getNovelFilePath(String novelId) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final novelDir = Directory('${dir.path}/novels');
+    return '${novelDir.path}/$novelId';
+  }
+  
   @override
   void initState() {
     super.initState();
@@ -72,9 +83,25 @@ class _MyAppState extends State<MyApp> {
           routes: {
             '/reader': (context) {
               final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-              return ReaderPage(
-                novelId: args['novelId'] as String,
-                initialChapterIndex: args['chapterIndex'] as int,
+              final novelId = args['novelId'] as String;
+              
+              return FutureBuilder<String>(
+                future: _getNovelFilePath(novelId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  
+                  if (snapshot.hasError || snapshot.data == null) {
+                    return const Center(child: Text('无法加载小说'));
+                  }
+                  
+                  final file = File(snapshot.data!);
+                  final loader = TextSegmentLoader(file);
+                  final controller = ReaderController(loader);
+                  
+                  return ReaderPage(controller: controller);
+                },
               );
             },
           },

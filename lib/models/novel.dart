@@ -11,6 +11,7 @@ class Novel {
   final String lastChapterTitle;
   final int? currentChapter;
   final double? scrollProgress;
+  final int? currentPageIndex; // 当前页码
 
   Novel({
     required this.id,
@@ -24,6 +25,7 @@ class Novel {
     required this.lastChapterTitle,
     this.currentChapter,
     this.scrollProgress,
+    this.currentPageIndex,
   });
 
   /// 从JSON创建Novel实例
@@ -40,6 +42,7 @@ class Novel {
       lastChapterTitle: json['lastChapterTitle'] as String,
       currentChapter: json['currentChapter'] as int?,
       scrollProgress: (json['scrollProgress'] as num?)?.toDouble(),
+      currentPageIndex: json['currentPageIndex'] as int?,
     );
   }
 
@@ -57,6 +60,7 @@ class Novel {
       'lastChapterTitle': lastChapterTitle,
       'currentChapter': currentChapter,
       'scrollProgress': scrollProgress,
+      'currentPageIndex': currentPageIndex,
     };
   }
 
@@ -73,6 +77,7 @@ class Novel {
     String? lastChapterTitle,
     int? currentChapter,
     double? scrollProgress,
+    int? currentPageIndex,
   }) {
     return Novel(
       id: id ?? this.id,
@@ -86,6 +91,7 @@ class Novel {
       lastChapterTitle: lastChapterTitle ?? this.lastChapterTitle,
       currentChapter: currentChapter ?? this.currentChapter,
       scrollProgress: scrollProgress ?? this.scrollProgress,
+      currentPageIndex: currentPageIndex ?? this.currentPageIndex,
     );
   }
 }

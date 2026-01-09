@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
@@ -19,6 +20,14 @@ class NovelProvider with ChangeNotifier {
 
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
+
+  /// 根据ID获取小说
+  Novel getNovelById(String id) {
+    return _favoriteNovels.firstWhere(
+      (n) => n.id == id,
+      orElse: () => throw Exception('未找到ID为 $id 的小说'),
+    );
+  }
 
   /// 获取最近阅读的小说列表
   List<Novel> get recentNovels => _recentNovels;
@@ -73,8 +82,26 @@ class NovelProvider with ChangeNotifier {
     
     // 加载书架背景图片路径
     _bookshelfBackgroundImage = prefs.getString('bookshelfBackgroundImage');
+
+    // 加载小说收藏元数据(包含进度)
+    final novelsJson = prefs.getString('favoriteNovelsMetadata');
+    if (novelsJson != null) {
+      try {
+        final List<dynamic> list = json.decode(novelsJson);
+        _favoriteNovels = list.map((item) => Novel.fromJson(item)).toList();
+      } catch (e) {
+        debugPrint('加载小说元数据失败: $e');
+      }
+    }
     
     notifyListeners();
+  }
+  
+  /// 保存小说元数据
+  Future<void> _saveNovelsMetadata() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String encoded = json.encode(_favoriteNovels.map((n) => n.toJson()).toList());
+    await prefs.setString('favoriteNovelsMetadata', encoded);
   }
   
   /// 保存用户配置
@@ -125,16 +152,20 @@ class NovelProvider with ChangeNotifier {
         .where((entity) => entity is File && entity.path.endsWith('.txt'))
         .cast<File>();
     
-    final loadedNovels = <Novel>[];
+    bool changed = false;
     
+    // 1. 同步文件状态：如果文件被删除了，从收藏中移除
+    final currentIds = files.map((f) => path.basename(f.path)).toSet();
+    final initialCount = _favoriteNovels.length;
+    _favoriteNovels.removeWhere((n) => n.category == '本地' && !currentIds.contains(n.id));
+    if (_favoriteNovels.length != initialCount) changed = true;
+
+    // 2. 发现新文件：如果有新文件，添加到列表
     for (final file in files) {
       try {
-        // 使用basename函数获取文件名，这在所有平台上都有效
-        final filename = path.basename(file.path);
-        final id = filename;
-        final title = filename.replaceAll('.txt', '');
+        final id = path.basename(file.path);
+        final title = id.replaceAll('.txt', '');
         
-        // 检查小说是否已存在
         if (!_favoriteNovels.any((n) => n.id == id)) {
           final novel = Novel(
             id: id,
@@ -148,17 +179,17 @@ class NovelProvider with ChangeNotifier {
             lastChapterTitle: '第一章',
           );
           
-          loadedNovels.add(novel);
+          _favoriteNovels.add(novel);
+          changed = true;
         }
       } catch (e) {
-        print('加载小说文件失败: $e');
+        debugPrint('加载小说文件失败: $e');
       }
     }
     
-    // 添加新发现的小说到收藏列表
-    if (loadedNovels.isNotEmpty) {
-      _favoriteNovels.addAll(loadedNovels);
+    if (changed) {
       _sortNovels();
+      await _saveNovelsMetadata();
       notifyListeners();
     }
   }
@@ -249,16 +280,18 @@ class NovelProvider with ChangeNotifier {
   }
 
   /// 更新阅读进度
-  void updateReadingProgress(String novelId, int chapter, double scrollProgress) {
+  void updateReadingProgress(String novelId, int chapter, double scrollProgress, {int? pageIndex}) {
     final index = _favoriteNovels.indexWhere((n) => n.id == novelId);
     if (index != -1) {
       final novel = _favoriteNovels[index];
       _favoriteNovels[index] = novel.copyWith(
         currentChapter: chapter,
         scrollProgress: scrollProgress,
+        currentPageIndex: pageIndex,
         lastUpdateTime: DateTime.now().millisecondsSinceEpoch, // 更新阅读时间
       );
       _sortNovels();
+      _saveNovelsMetadata(); // 持久化进度
       notifyListeners();
     }
 
