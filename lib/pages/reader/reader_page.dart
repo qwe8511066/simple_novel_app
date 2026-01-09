@@ -20,12 +20,12 @@ class ReaderPage extends StatefulWidget {
 class _ReaderPageState extends State<ReaderPage> {
   bool _ready = false;
   int _currentPageIndex = 0;
+  int? _lastPreloadedPage;
   late PageController _pageController;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
     
     // 加载保存的阅读进度
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -81,7 +81,7 @@ class _ReaderPageState extends State<ReaderPage> {
               child: Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Text(
-                  '第 ${_currentPageIndex + 1}/${widget.controller.pages.length} 页',
+                  '第 ${_currentPageIndex + 1}/${widget.controller.totalPages} 页',
                   style: const TextStyle(fontSize: 14),
                 ),
               ),
@@ -91,18 +91,22 @@ class _ReaderPageState extends State<ReaderPage> {
         body: LayoutBuilder(
           builder: (ctx, c) {
             if (!_ready) {
+              // 初始化PageController时设置初始页面
+              _pageController = PageController(initialPage: _currentPageIndex);
+              
               widget.controller
                   .load(c.biggest, style)
-                  .then((_) {
+                  .then((_) async {
                     if (mounted) {
                       setState(() => _ready = true);
-                      // 加载完成后跳转到保存的页码
-                      if (_currentPageIndex < widget.controller.totalPages) {
-                        Future.delayed(const Duration(milliseconds: 100), () {
-                          if (mounted) {
-                            _pageController.jumpToPage(_currentPageIndex);
-                          }
-                        });
+                      // 等待页面完全构建后再跳转到保存的页码
+                      await Future.delayed(const Duration(milliseconds: 100));
+                      if (mounted && _currentPageIndex > 0 && _currentPageIndex < widget.controller.totalPages) {
+                        // 使用animateToPage以确保跳转成功
+                        _pageController.animateToPage(_currentPageIndex,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
                       }
                     }
                   });
@@ -119,8 +123,13 @@ class _ReaderPageState extends State<ReaderPage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      widget.controller.isLoading ? '处理中...' : '已完成',
+                      widget.controller.isLoading ? '处理中，请稍候...' : '已完成',
                       style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '大文件需要更多处理时间，请耐心等待',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[300]),
                     ),
                   ],
                 ),
@@ -131,18 +140,40 @@ class _ReaderPageState extends State<ReaderPage> {
               controller: _pageController,
               itemCount: widget.controller.totalPages,
               onPageChanged: (index) {
-                setState(() {
-                  _currentPageIndex = index;
-                });
+                // 确保索引在有效范围内
+                if (index >= 0 && index < widget.controller.totalPages) {
+                  setState(() {
+                    _currentPageIndex = index;
+                  });
+                }
               },
-              itemBuilder: (_, i) => Padding(
-                padding: const EdgeInsets.all(16),
-                child: SingleChildScrollView(
-                  child: Text(
-                    widget.controller.getPageContent(i),
-                    style: style,
-                  ),
-                ),
+              itemBuilder: (_, i) => FutureBuilder<String>(
+                future: widget.controller.getPageContentAsync(i),
+                builder: (context, snapshot) {
+                  String content = '';
+                  if (snapshot.hasData) {
+                    content = snapshot.data!;
+                  } else {
+                    content = '加载中...';
+                  }
+                  
+                  // 预加载相邻页面，但仅在当前显示的页面上执行
+                  if (snapshot.hasData && i == _currentPageIndex && (i != _lastPreloadedPage || _lastPreloadedPage == null)) {
+                    _lastPreloadedPage = i;
+                    // 预加载当前页的相邻页面
+                    widget.controller.preloadAdjacentPages(i);
+                  }
+                  
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SingleChildScrollView(
+                      child: Text(
+                        content,
+                        style: style,
+                      ),
+                    ),
+                  );
+                },
               ),
             );
           },
