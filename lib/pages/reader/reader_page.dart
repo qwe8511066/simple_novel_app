@@ -97,7 +97,7 @@ class _ReaderPageState extends State<ReaderPage> {
                     if (mounted) {
                       setState(() => _ready = true);
                       // 加载完成后跳转到保存的页码
-                      if (_currentPageIndex < widget.controller.pages.length) {
+                      if (_currentPageIndex < widget.controller.totalPages) {
                         Future.delayed(const Duration(milliseconds: 100), () {
                           if (mounted) {
                             _pageController.jumpToPage(_currentPageIndex);
@@ -106,12 +106,30 @@ class _ReaderPageState extends State<ReaderPage> {
                       }
                     }
                   });
-              return const Center(child: CircularProgressIndicator());
+              return Container(
+                color: Colors.white,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 20),
+                    Text(
+                      '正在加载小说内容...',
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.controller.isLoading ? '处理中...' : '已完成',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+              );
             }
 
             return PageView.builder(
               controller: _pageController,
-              itemCount: widget.controller.pages.length,
+              itemCount: widget.controller.totalPages,
               onPageChanged: (index) {
                 setState(() {
                   _currentPageIndex = index;
@@ -121,7 +139,7 @@ class _ReaderPageState extends State<ReaderPage> {
                 padding: const EdgeInsets.all(16),
                 child: SingleChildScrollView(
                   child: Text(
-                    widget.controller.pages[i].join('\n'),
+                    widget.controller.getPageContent(i),
                     style: style,
                   ),
                 ),
