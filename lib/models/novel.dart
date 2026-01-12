@@ -12,7 +12,12 @@ class Novel {
   final int? currentChapter;
   final double? scrollProgress;
   final int? currentPageIndex; // 当前页码
-
+    
+  // Legado风格的阅读进度坐标系统
+  final int? durChapterIndex; // 当前章节索引
+  final int? durChapterPos;   // 当前章节内的位置
+  final int? durChapterPage;  // 当前章节内的页码
+   
   Novel({
     required this.id,
     required this.title,
@@ -26,6 +31,9 @@ class Novel {
     this.currentChapter,
     this.scrollProgress,
     this.currentPageIndex,
+    this.durChapterIndex,
+    this.durChapterPos,
+    this.durChapterPage,
   });
 
   /// 从JSON创建Novel实例
@@ -43,6 +51,9 @@ class Novel {
       currentChapter: json['currentChapter'] as int?,
       scrollProgress: (json['scrollProgress'] as num?)?.toDouble(),
       currentPageIndex: json['currentPageIndex'] as int?,
+      durChapterIndex: json['durChapterIndex'] as int?,
+      durChapterPos: json['durChapterPos'] as int?,
+      durChapterPage: json['durChapterPage'] as int?,
     );
   }
 
@@ -61,6 +72,9 @@ class Novel {
       'currentChapter': currentChapter,
       'scrollProgress': scrollProgress,
       'currentPageIndex': currentPageIndex,
+      'durChapterIndex': durChapterIndex,
+      'durChapterPos': durChapterPos,
+      'durChapterPage': durChapterPage,
     };
   }
 
@@ -78,6 +92,9 @@ class Novel {
     int? currentChapter,
     double? scrollProgress,
     int? currentPageIndex,
+    int? durChapterIndex,
+    int? durChapterPos,
+    int? durChapterPage,
   }) {
     return Novel(
       id: id ?? this.id,
@@ -92,6 +109,9 @@ class Novel {
       currentChapter: currentChapter ?? this.currentChapter,
       scrollProgress: scrollProgress ?? this.scrollProgress,
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
+      durChapterIndex: durChapterIndex ?? this.durChapterIndex,
+      durChapterPos: durChapterPos ?? this.durChapterPos,
+      durChapterPage: durChapterPage ?? this.durChapterPage,
     );
   }
 }

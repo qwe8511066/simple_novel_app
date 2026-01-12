@@ -6,11 +6,13 @@ import '../../providers/novel_provider.dart';
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
   final String novelId;
+  final int initialPageIndex;
   
   const ReaderPage({
     super.key,
     required this.controller,
     required this.novelId,
+    this.initialPageIndex = 0,
   });
 
   @override
@@ -29,16 +31,45 @@ class _ReaderPageState extends State<ReaderPage> {
   void initState() {
     super.initState();
     
-    // 加载保存的阅读进度
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final novelProvider = Provider.of<NovelProvider>(context, listen: false);
-      try {
-        final novel = novelProvider.getNovelById(widget.novelId);
-        if (novel.currentPageIndex != null && novel.currentPageIndex! > 0) {
-          _currentPageIndex = novel.currentPageIndex!;
+    // 使用传入的初始页码，如果为0则尝试从provider获取
+    _currentPageIndex = widget.initialPageIndex;
+    
+    // 如果初始页码为0，再尝试从provider获取保存的阅读进度
+    if (_currentPageIndex == 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final novelProvider = Provider.of<NovelProvider>(context, listen: false);
+        try {
+          final novel = novelProvider.getNovelById(widget.novelId);
+          // 优先使用Legado风格的坐标系统
+          if (novel.durChapterPage != null && novel.durChapterPage! > 0) {
+            _currentPageIndex = novel.durChapterPage!;
+          } else if (novel.currentPageIndex != null && novel.currentPageIndex! > 0) {
+            _currentPageIndex = novel.currentPageIndex!;
+          }
+        } catch (_) {}
+      });
+    }
+    
+    // 预加载目标页面以减少跳转延迟
+    _preLoadTargetPage();
+  }
+  
+  /// 预加载目标页面
+  void _preLoadTargetPage() {
+    if (_currentPageIndex > 0) {
+      // 在后台预加载目标页面的内容
+      Future.microtask(() async {
+        if (widget.controller.hasCachedData && 
+            widget.controller.isValidPageIndex(_currentPageIndex)) {
+          try {
+            // 预加载目标页面以减少跳转时的延迟
+            await widget.controller.getPageContentAsync(_currentPageIndex);
+          } catch (e) {
+            // 预加载失败不影响主流程
+          }
         }
-      } catch (_) {}
-    });
+      });
+    }
   }
 
   /// 加载首屏内容并显示
@@ -52,6 +83,34 @@ class _ReaderPageState extends State<ReaderPage> {
           });
         }
       });
+    }
+  }
+  
+  /// 根据保存的进度精确恢复阅读位置
+  Future<void> _restoreReadingPosition() async {
+    // 确保页面已经完全加载并且有有效的页码
+    if (widget.controller.fullContentLoaded && 
+        _currentPageIndex >= 0 && 
+        widget.controller.isValidPageIndex(_currentPageIndex)) {
+      
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && widget.controller.isValidPageIndex(_currentPageIndex)) {
+            // 使用更平滑的跳转方式，减少视觉跳跃感
+            // 如果页面索引为0，直接跳转；否则使用较短的动画
+            if (_currentPageIndex == 0) {
+              _pageController.jumpToPage(_currentPageIndex);
+            } else {
+              // 使用非常短的动画时间来平滑过渡，减少跳跃感
+              _pageController.animateToPage(
+                _currentPageIndex,
+                duration: const Duration(milliseconds: 100),
+                curve: Curves.easeInOut,
+              );
+            }
+          }
+        });
+      }
     }
   }
 
@@ -74,6 +133,9 @@ class _ReaderPageState extends State<ReaderPage> {
         0,
         0.0,
         pageIndex: _currentPageIndex,
+        durChapterIndex: 0, // 暂时设为0，后续可以根据实际章节逻辑调整
+        durChapterPos: 0,  // 暂时设为0，后续可以根据实际位置逻辑调整
+        durChapterPage: _currentPageIndex, // 保存当前页码作为durChapterPage
       );
     } catch (e) {
       debugPrint('保存阅读进度失败: $e');
@@ -119,15 +181,10 @@ class _ReaderPageState extends State<ReaderPage> {
                   .then((_) async {
                     if (mounted) {
                       setState(() => _ready = true);
-                      // 等待页面完全构建后再跳转到保存的页码
-                      await Future.delayed(const Duration(milliseconds: 100));
-                      if (mounted && _currentPageIndex > 0 && _currentPageIndex < widget.controller.totalPages) {
-                        // 使用animateToPage以确保跳转成功
-                        _pageController.animateToPage(_currentPageIndex,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      }
+                      // 等待一小段时间确保页面控制器就绪
+                      await Future.delayed(const Duration(milliseconds: 50));
+                      // 使用专门的进度恢复方法
+                      _restoreReadingPosition();
                     }
                   });
               
@@ -150,7 +207,7 @@ class _ReaderPageState extends State<ReaderPage> {
                         ),
                       )
                     else
-                      const CircularProgressIndicator(),
+                      CircularProgressIndicator(value: widget.controller.fullContentLoaded ? 1.0 : null,),
                     const SizedBox(height: 20),
                     Text(
                       _firstScreenReady ? '首屏内容已加载' : '正在准备阅读环境...',
@@ -158,7 +215,7 @@ class _ReaderPageState extends State<ReaderPage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      widget.controller.isLoading ? '后台处理中...' : '加载完成',
+                      widget.controller.isLoading ? '处理中 (${widget.controller.getTotalPages()} 页)' : '加载完成',
                       style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                     ),
                     const SizedBox(height: 10),

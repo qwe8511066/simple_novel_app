@@ -49,18 +49,43 @@ class ReaderController extends ChangeNotifier {
         // 这是为了向后兼容已有的缓存
         _isLoading = false;
         _estimatedTotalPages = cachedPages.length;
+        // 仍然创建分页引擎，以便支持按需分页
+        _lines = <String>[];
+        await for (String line in utf8File.openRead().transform(utf8.decoder).transform(const LineSplitter())) {
+          _lines!.add(line);
+          if (_lines!.length > 5000) break; // 只读取前5000行用于引擎初始化
+        }
+        _paginationEngine = OnDemandPaginationEngine(
+          lines: _lines!,
+          style: style,
+          size: size,
+        );
+        _fullContentLoaded = true;
         notifyListeners();
         return;
       }
 
       // 流式读取文件内容
       _lines = <String>[];
+      int lineCount = 0;
       await for (String line in utf8File.openRead().transform(utf8.decoder).transform(const LineSplitter())) {
         _lines!.add(line);
+        lineCount++;
         
         // 每处理一定数量的行后让出控制权给UI线程
-        if (_lines!.length % 500 == 0) {
+        if (lineCount % 500 == 0) {
           await Future<void>.delayed(Duration.zero);
+          
+          // 在加载过程中持续估算总页数，让用户感觉加载更快
+          if (_paginationEngine == null && _lines!.length > 100) {
+            _paginationEngine = OnDemandPaginationEngine(
+              lines: _lines!,
+              style: style,
+              size: size,
+            );
+          }
+          _estimatedTotalPages = _paginationEngine?.estimateTotalPages() ?? (lineCount ~/ 20); // 估算
+          notifyListeners(); // 更新UI显示进度
         }
       }
 
@@ -159,5 +184,20 @@ class ReaderController extends ChangeNotifier {
     if (_paginationEngine != null) {
       await _paginationEngine!.preloadAdjacentPages(currentIndex);
     }
+  }
+  
+  /// 获取当前总页数
+  int getTotalPages() {
+    return _estimatedTotalPages ?? 0;
+  }
+  
+  /// 检查页面索引是否有效
+  bool isValidPageIndex(int index) {
+    return index >= 0 && index < (_estimatedTotalPages ?? 0);
+  }
+  
+  /// 检查是否已有缓存的页面数据
+  bool get hasCachedData {
+    return _estimatedTotalPages != null && _estimatedTotalPages! > 0;
   }
 }
