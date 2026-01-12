@@ -129,12 +129,12 @@ class _ReaderPageState extends State<ReaderPage> {
   }
 
   /// 保存阅读进度
-  void _saveReadingProgress() {
+  Future<void> _saveReadingProgress() async {
     if (!mounted) return;
 
     try {
       final novelProvider = Provider.of<NovelProvider>(context, listen: false);
-      novelProvider.updateReadingProgress(
+      await novelProvider.updateReadingProgress(
         widget.novelId,
         0,
         0.0,
@@ -167,11 +167,15 @@ class _ReaderPageState extends State<ReaderPage> {
   Widget build(BuildContext context) {
     final style = const TextStyle(fontSize: 18, height: 1.8);
 
-    return PopScope(
-        canPop: true,
-        onPopInvokedWithResult: (didPop, result) {
+    final currentContext = context;
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
           if (didPop) return;
-          _saveReadingProgress();
+          await _saveReadingProgress();
+          if (mounted) {
+            Navigator.pop(currentContext);
+          }
         },
         child: Scaffold(
           appBar: PreferredSize(
@@ -312,9 +316,11 @@ class _ReaderPageState extends State<ReaderPage> {
                     novelTitle: widget.controller.novelTitle ?? '阅读器',
                     currentPage: _currentPageIndex + 1,
                     totalPages: widget.controller.totalPages,
-                    onBack: () {
-                      _saveReadingProgress();
-                      Navigator.pop(context);
+                    onBack: () async {
+                      await _saveReadingProgress();
+                      if (mounted) {
+                        Navigator.pop(currentContext);
+                      }
                     },
                     onCatalog: () {
                       // 目录

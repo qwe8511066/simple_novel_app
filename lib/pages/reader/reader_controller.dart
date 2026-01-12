@@ -127,9 +127,10 @@ class ReaderController extends ChangeNotifier {
     }
     
     try {
-      // 读取文件开头的字节（例如前10KB）
-      final fileBytes = await utf8File.readAsBytes();
-      final headerBytes = fileBytes.length > 10240 ? fileBytes.sublist(0, 10240) : fileBytes;
+      // 只读取文件开头的10KB内容，避免读取整个文件
+      final raf = await utf8File.open(mode: FileMode.read);
+      final headerBytes = await raf.read(10240);
+      await raf.close();
       
       // 解码为字符串
       String headerContent = utf8.decode(headerBytes);

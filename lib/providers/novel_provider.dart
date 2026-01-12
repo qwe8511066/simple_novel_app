@@ -290,7 +290,7 @@ class NovelProvider with ChangeNotifier {
   }
 
   /// 更新阅读进度
-  void updateReadingProgress(String novelId, int chapter, double scrollProgress, {int? pageIndex, int? durChapterIndex, int? durChapterPos, int? durChapterPage}) {
+  Future<void> updateReadingProgress(String novelId, int chapter, double scrollProgress, {int? pageIndex, int? durChapterIndex, int? durChapterPos, int? durChapterPage}) async {
     final index = _favoriteNovels.indexWhere((n) => n.id == novelId);
     if (index != -1) {
       final novel = _favoriteNovels[index];
@@ -304,7 +304,7 @@ class NovelProvider with ChangeNotifier {
         lastUpdateTime: DateTime.now().millisecondsSinceEpoch, // 更新阅读时间
       );
       _sortNovels();
-      _saveNovelsMetadata(); // 持久化进度
+      await _saveNovelsMetadata(); // 持久化进度
       notifyListeners();
     }
 
