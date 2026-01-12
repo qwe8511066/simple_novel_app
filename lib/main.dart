@@ -7,6 +7,8 @@ import 'pages/reader/reader_page.dart';
 import 'pages/reader/reader_controller.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'utils/smoothSlideTransitionBuilder.dart';
+
 void main() {
   runApp(
     ChangeNotifierProvider(
@@ -50,9 +52,8 @@ class _MyAppState extends State<MyApp> {
           theme: ThemeData(
             pageTransitionsTheme: PageTransitionsTheme(
                 builders: {
-                // 将 Android 平台的转场改为 iOS 风格的左右滑动
-                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.android: SmoothSlideTransitionBuilder(),
+                TargetPlatform.iOS: SmoothSlideTransitionBuilder(),
               },
             ),
             useMaterial3: true,
