@@ -112,7 +112,7 @@ class ReaderController extends ChangeNotifier {
   Future<String> getPageContentAsync(int index) async {
     if (_paginationEngine != null && index >= 0 && index < (_estimatedTotalPages ?? 0)) {
       final pageContent = await _paginationEngine!.getPageContent(index);
-      return pageContent.join('\\n');
+      return pageContent.join('\n');
     }
     return '';
   }

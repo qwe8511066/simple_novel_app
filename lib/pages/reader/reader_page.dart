@@ -26,15 +26,24 @@ class _ReaderPageState extends State<ReaderPage> {
   bool _showUIOverlay = false; // 是否显示UI弹窗
   int _currentPageIndex = 0;
   int? _lastPreloadedPage;
-  late PageController _pageController;
+  PageController? _pageController;
   String _firstScreenContent = ''; // 首屏内容缓存
   DateTime? _lastTapTime; // 记录上次点击时间
+  
+  // 用于保存当前页面的文本样式和尺寸
+  TextStyle? _currentStyle;
+  Size? _currentSize;
 
   @override
   void initState() {
     super.initState();
     // 使用传入的初始页码，如果为0则尝试从provider获取
     _currentPageIndex = widget.initialPageIndex;
+
+    // 初始化PageController，避免在build中初始化导致的重建
+    _pageController = PageController(
+      initialPage: _currentPageIndex,
+    );
 
     // 如果初始页码为0，再尝试从provider获取保存的阅读进度
     if (_currentPageIndex == 0) {
@@ -48,34 +57,45 @@ class _ReaderPageState extends State<ReaderPage> {
           // 优先使用Legado风格的坐标系统
           if (novel.durChapterPage != null && novel.durChapterPage! > 0) {
             _currentPageIndex = novel.durChapterPage!;
+            // 调整页面控制器到正确的初始页面
+            if (_pageController != null && mounted) {
+              _pageController!.jumpToPage(_currentPageIndex);
+            }
           } else if (novel.currentPageIndex != null &&
               novel.currentPageIndex! > 0) {
             _currentPageIndex = novel.currentPageIndex!;
+            // 调整页面控制器到正确的初始页面
+            if (_pageController != null && mounted) {
+              _pageController!.jumpToPage(_currentPageIndex);
+            }
           }
         } catch (_) {}
       });
     }
-
-    // 预加载目标页面以减少跳转延迟
-    _preLoadTargetPage();
   }
 
-  /// 预加载目标页面
+  /// 预加载目标页面和相邻页面
   void _preLoadTargetPage() {
-    if (_currentPageIndex > 0) {
-      // 在后台预加载目标页面的内容
-      Future.microtask(() async {
-        if (widget.controller.hasCachedData &&
-            widget.controller.isValidPageIndex(_currentPageIndex)) {
-          try {
-            // 预加载目标页面以减少跳转时的延迟
-            await widget.controller.getPageContentAsync(_currentPageIndex);
-          } catch (e) {
-            // 预加载失败不影响主流程
-          }
+    // 在后台预加载目标页面和相邻页面的内容
+    Future.microtask(() async {
+      try {
+        // 预加载目标页面
+        if (widget.controller.isValidPageIndex(_currentPageIndex)) {
+          await widget.controller.getPageContentAsync(_currentPageIndex);
         }
-      });
-    }
+        // 预加载前一页（如果存在）
+        if (_currentPageIndex > 0 && widget.controller.isValidPageIndex(_currentPageIndex - 1)) {
+          await widget.controller.getPageContentAsync(_currentPageIndex - 1);
+        }
+        // 预加载后一页（如果存在）
+        if (widget.controller.isValidPageIndex(_currentPageIndex + 1)) {
+          await widget.controller.getPageContentAsync(_currentPageIndex + 1);
+        }
+      } catch (e) {
+        // 预加载失败不影响主流程
+        debugPrint('预加载目标页面失败: $e');
+      }
+    });
   }
 
   /// 加载首屏内容并显示
@@ -101,14 +121,15 @@ class _ReaderPageState extends State<ReaderPage> {
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted &&
-              widget.controller.isValidPageIndex(_currentPageIndex)) {
+              widget.controller.isValidPageIndex(_currentPageIndex) &&
+              _pageController != null) {
             // 使用更平滑的跳转方式，减少视觉跳跃感
             // 如果页面索引为0，直接跳转；否则使用较短的动画
             if (_currentPageIndex == 0) {
-              _pageController.jumpToPage(_currentPageIndex);
+              _pageController?.jumpToPage(_currentPageIndex);
             } else {
               // 使用非常短的动画时间来平滑过渡，减少跳跃感
-              _pageController.animateToPage(
+              _pageController?.animateToPage(
                 _currentPageIndex,
                 duration: const Duration(milliseconds: 100),
                 curve: Curves.easeInOut,
@@ -124,7 +145,7 @@ class _ReaderPageState extends State<ReaderPage> {
   void dispose() {
     // 保存阅读进度
     _saveReadingProgress();
-    _pageController.dispose();
+    _pageController?.dispose();
     super.dispose();
   }
 
@@ -190,17 +211,19 @@ class _ReaderPageState extends State<ReaderPage> {
                 LayoutBuilder(
                   builder: (ctx, c) {
                     if (!_ready) {
-                      // 初始化PageController时设置初始页面
-                      _pageController = PageController(
-                        initialPage: _currentPageIndex,
-                      );
-
+                      // 保存当前样式和尺寸
+                      _currentStyle = style;
+                      _currentSize = c.biggest;
+                      
                       // 快速加载首屏内容以立即显示
                       _loadFirstScreenContent(c.biggest, style);
 
                       // 同时在后台加载完整内容
                       widget.controller.load(c.biggest, style).then((_) async {
                         if (mounted) {
+                          // 预加载目标页面和相邻页面
+                          _preLoadTargetPage();
+                          
                           setState(() => _ready = true);
                           // 等待一小段时间确保页面控制器就绪
                           await Future.delayed(
@@ -214,56 +237,23 @@ class _ReaderPageState extends State<ReaderPage> {
                       // 显示首屏内容或加载指示器
                       return Container(
                         color: Colors.white,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_firstScreenReady &&
-                                _firstScreenContent.isNotEmpty)
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: SingleChildScrollView(
-                                    child: Text(
-                                      _firstScreenContent,
-                                      style: style,
-                                    ),
-                                  ),
+                        child: _firstScreenReady && _firstScreenContent.isNotEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: SingleChildScrollView(
+                                  child: Text(_firstScreenContent, style: style),
                                 ),
                               )
-                            else
-                              CircularProgressIndicator(
-                                value: widget.controller.fullContentLoaded
-                                    ? 1.0
-                                    : null,
+                            : Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.0,
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                ),
                               ),
-                            const SizedBox(height: 20),
-                            Text(
-                              _firstScreenReady ? '首屏内容已加载' : '正在准备阅读环境...',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              widget.controller.isLoading
-                                  ? '处理中 (${widget.controller.getTotalPages()} 页)'
-                                  : '加载完成',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              '完整内容在后台加载中',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue[300],
-                              ),
-                            ),
-                          ],
-                        ),
                       );
                     }
 
@@ -279,34 +269,14 @@ class _ReaderPageState extends State<ReaderPage> {
                           });
                         }
                       },
-                      itemBuilder: (_, i) => FutureBuilder<String>(
-                        future: widget.controller.getPageContentAsync(i),
-                        builder: (context, snapshot) {
-                          String content = '';
-                          if (snapshot.hasData) {
-                            content = snapshot.data!;
-                          } else {
-                            content = '加载中...';
-                          }
-
-                          // 预加载相邻页面，但仅在当前显示的页面上执行
-                          if (snapshot.hasData &&
-                              i == _currentPageIndex &&
-                              (i != _lastPreloadedPage ||
-                                  _lastPreloadedPage == null)) {
-                            _lastPreloadedPage = i;
-                            // 预加载当前页的相邻页面
-                            widget.controller.preloadAdjacentPages(i);
-                          }
-
-                          return Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: SingleChildScrollView(
-                              child: Text(content, style: style),
-                            ),
-                          );
-                        },
-                      ),
+                      itemBuilder: (_, i) {
+                        // 使用自定义的页面内容组件，避免FutureBuilder的重建问题
+                        return _PageContentWidget(
+                          controller: widget.controller,
+                          pageIndex: i,
+                          style: style,
+                        );
+                      },
                     );
                   },
                 ),
@@ -343,6 +313,93 @@ class _ReaderPageState extends State<ReaderPage> {
             ),
           ),
         ),
+    );
+  }
+}
+
+/// 自定义页面内容组件，避免FutureBuilder的重建问题
+class _PageContentWidget extends StatefulWidget {
+  final ReaderController controller;
+  final int pageIndex;
+  final TextStyle style;
+
+  const _PageContentWidget({
+    required this.controller,
+    required this.pageIndex,
+    required this.style,
+  });
+
+  @override
+  _PageContentWidgetState createState() => _PageContentWidgetState();
+}
+
+class _PageContentWidgetState extends State<_PageContentWidget> {
+  late Future<String> _contentFuture;
+  String _content = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContent();
+  }
+
+  @override
+  void didUpdateWidget(_PageContentWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 只有当页面索引或控制器变化时才重新加载内容
+    if (widget.pageIndex != oldWidget.pageIndex ||
+        widget.controller != oldWidget.controller) {
+      _loadContent();
+    }
+  }
+
+  void _loadContent() {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    _contentFuture = widget.controller.getPageContentAsync(widget.pageIndex)
+      .then((content) {
+        if (mounted) {
+          setState(() {
+            _content = content;
+            _isLoading = false;
+          });
+        }
+        return content;
+      });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: Text(
+              _content,
+              style: widget.style,
+            ),
+          ),
+        ),
+        if (_isLoading)
+          Positioned.fill(
+            child: Container(
+              color: Colors.white.withOpacity(0.5),
+              child: const Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
