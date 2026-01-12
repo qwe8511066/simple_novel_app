@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -10,7 +9,7 @@ import '../models/novel.dart';
 /// 小说状态管理类
 class NovelProvider with ChangeNotifier {
   List<Novel> _favoriteNovels = [];
-  List<Novel> _recentNovels = [];
+  final List<Novel> _recentNovels = [];
   String? _novelDirPath;
   bool _isDarkMode = false;
   double _fontSize = 14;
@@ -75,7 +74,18 @@ class NovelProvider with ChangeNotifier {
     // 加载书架背景色
     final bookshelfColorHex = prefs.getString('bookshelfBackgroundColor');
     if (bookshelfColorHex != null) {
-      _bookshelfBackgroundColor = Color(int.parse(bookshelfColorHex, radix: 16));
+      // 将十六进制颜色字符串转换为Color对象
+      final hexColor = bookshelfColorHex.replaceAll('#', '');
+      final int colorValue = int.parse(hexColor, radix: 16);
+      final Color parsedColor = Color(colorValue + 0xFF000000);
+      
+      // 确保颜色不会太浅或太深
+      final double lightness = HSLColor.fromColor(parsedColor).lightness;
+      if (lightness < 0.2 || lightness > 0.8) {
+        _bookshelfBackgroundColor = Colors.white; // 默认颜色
+      } else {
+        _bookshelfBackgroundColor = parsedColor;
+      }
     } else {
       _bookshelfBackgroundColor = Colors.white;
     }
@@ -115,10 +125,10 @@ class NovelProvider with ChangeNotifier {
     await prefs.setDouble('fontSize', _fontSize);
     
     // 保存主题色
-    await prefs.setString('themeColor', _themeColor.value.toRadixString(16));
+    await prefs.setString('themeColor', _themeColor.toARGB32().toRadixString(16));
     
     // 保存书架背景色
-    await prefs.setString('bookshelfBackgroundColor', _bookshelfBackgroundColor.value.toRadixString(16));
+    await prefs.setString('bookshelfBackgroundColor', _bookshelfBackgroundColor.toARGB32().toRadixString(16));
     
     // 保存书架背景图片路径
     if (_bookshelfBackgroundImage != null) {

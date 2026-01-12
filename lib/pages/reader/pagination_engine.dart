@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 
 /// 分页处理函数，用于后台计算
 Future<List<List<String>>> paginateInBackground(PaginationParams params) async {

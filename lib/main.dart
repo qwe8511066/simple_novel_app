@@ -7,7 +7,6 @@ import 'pages/reader/reader_page.dart';
 import 'pages/reader/reader_controller.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-
 void main() {
   runApp(
     ChangeNotifierProvider(
@@ -49,6 +48,13 @@ class _MyAppState extends State<MyApp> {
         return MaterialApp(
           title: '简单小说',
           theme: ThemeData(
+            pageTransitionsTheme: PageTransitionsTheme(
+                builders: {
+                // 将 Android 平台的转场改为 iOS 风格的左右滑动
+                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+              },
+            ),
             useMaterial3: true,
             brightness: Brightness.light,
             primaryColor: provider.themeColor,

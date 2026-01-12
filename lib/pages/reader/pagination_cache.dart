@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as path;
-import 'package:flutter/material.dart';
 
 /// 分页缓存管理器
 /// 用于缓存已分页的文本内容，避免重复计算

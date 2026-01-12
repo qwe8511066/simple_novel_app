@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
 import '../components/web_service_button.dart';
-import '../components/novel_import_button.dart';
 import '../providers/novel_provider.dart';
 
 /// 设置页面
@@ -24,7 +23,7 @@ class SettingsPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: const Color.fromRGBO(128, 128, 128, 0.1),
                 blurRadius: 2,
                 offset: const Offset(0, 1),
               ),
@@ -90,7 +89,7 @@ class SettingsPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: const Color.fromRGBO(128, 128, 128, 0.1),
                 blurRadius: 2,
                 offset: const Offset(0, 1),
               ),
@@ -129,7 +128,7 @@ class SettingsPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: const Color.fromRGBO(128, 128, 128, 0.1),
                 blurRadius: 2,
                 offset: const Offset(0, 1),
               ),
@@ -233,8 +232,9 @@ class SettingsPage extends StatelessWidget {
     return ListTile(
       title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
       onTap: () async {
+        final currentContext = context;
         await provider.setFontSize(size);
-        Navigator.pop(context);
+        Navigator.pop(currentContext);
       },
     );
   }
@@ -270,9 +270,10 @@ class SettingsPage extends StatelessWidget {
                   Colors.deepOrange,
                 ].map((color) => GestureDetector(
                   onTap: () async {
+                    final currentContext = context;
                     selectedColor = color;
                     await provider.setThemeColor(color);
-                    Navigator.pop(context);
+                    Navigator.pop(currentContext);
                   },
                   child: Container(
                     width: 48,
@@ -300,7 +301,7 @@ class SettingsPage extends StatelessWidget {
                   onColorChanged: (color) {
                     selectedColor = color;
                   },
-                  showLabel: true,
+                  labelTypes: [ColorLabelType.hex, ColorLabelType.hsl, ColorLabelType.rgb],
                   pickerAreaHeightPercent: 0.8,
                 ),
               ),
@@ -314,8 +315,9 @@ class SettingsPage extends StatelessWidget {
           ),
           TextButton(
             onPressed: () async {
+              final currentContext = context;
               await provider.setThemeColor(selectedColor);
-              Navigator.pop(context);
+              Navigator.pop(currentContext);
             },
             child: Text('确认', style: Theme.of(context).textTheme.bodyMedium),
           ),
@@ -326,7 +328,6 @@ class SettingsPage extends StatelessWidget {
   
   void _showBookshelfBackgroundDialog(BuildContext context) {
     final provider = Provider.of<NovelProvider>(context, listen: false);
-    Color selectedColor = provider.bookshelfBackgroundColor;
 
     showDialog(
       context: context,
@@ -384,7 +385,7 @@ class SettingsPage extends StatelessWidget {
                             color: Colors.white,
                             shadows: [
                               Shadow(
-                                color: Colors.black.withOpacity(0.5),
+                                color: const Color.fromARGB(128, 0, 0, 0),
                                 offset: const Offset(1, 1),
                                 blurRadius: 2,
                               ),
@@ -442,10 +443,11 @@ class SettingsPage extends StatelessWidget {
                   Colors.grey[900],
                 ].map((color) => GestureDetector(
                   onTap: () async {
+                    final currentContext = context;
                     if (color != null) {
                       selectedColor = color;
                       await provider.setBookshelfBackgroundColor(color);
-                      Navigator.pop(context);
+                      Navigator.pop(currentContext);
                     }
                   },
                   child: Container(
@@ -474,7 +476,7 @@ class SettingsPage extends StatelessWidget {
                   onColorChanged: (color) {
                     selectedColor = color;
                   },
-                  showLabel: true,
+                  labelTypes: [ColorLabelType.hex, ColorLabelType.hsl, ColorLabelType.rgb],
                   pickerAreaHeightPercent: 0.8,
                 ),
               ),
@@ -488,8 +490,9 @@ class SettingsPage extends StatelessWidget {
           ),
           TextButton(
             onPressed: () async {
+              final currentContext = context;
               await provider.setBookshelfBackgroundColor(selectedColor);
-              Navigator.pop(context);
+              Navigator.pop(currentContext);
             },
             child: Text('确认', style: Theme.of(context).textTheme.bodyMedium),
           ),
@@ -499,11 +502,12 @@ class SettingsPage extends StatelessWidget {
   }
   
   void _showBookshelfImagePicker(BuildContext context) async {
+    final currentContext = context;
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
     
     if (image != null) {
-      final provider = Provider.of<NovelProvider>(context, listen: false);
+      final provider = Provider.of<NovelProvider>(currentContext, listen: false);
       await provider.setBookshelfBackgroundImage(image.path);
     }
   }
