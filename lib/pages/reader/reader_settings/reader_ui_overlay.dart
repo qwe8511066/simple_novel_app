@@ -43,7 +43,7 @@ class ReaderUIOverlay extends StatelessWidget {
               color: themeColor,
               child: AppBar(
                 title: Text(
-                  statusBarHeight.toString() + novelTitle,
+                  novelTitle,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -57,17 +57,6 @@ class ReaderUIOverlay extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
-                // actions: [
-                //   Center(
-                //     child: Padding(
-                //       padding: const EdgeInsets.only(right: 16),
-                //       child: Text(
-                //         '第 $currentPage/$totalPages 页',
-                //         style: const TextStyle(fontSize: 14, color: Colors.white),
-                //       ),
-                //     ),
-                //   ),
-                // ],
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
                   onPressed: onBack,
