@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../utils/statusBarStyle.dart';
 import 'reader_controller.dart';
 import './reader_settings/reader_ui_overlay.dart';
 import '../../providers/novel_provider.dart';
-
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
   final String novelId;
@@ -29,7 +29,9 @@ class _ReaderPageState extends State<ReaderPage> {
   PageController? _pageController;
   String _firstScreenContent = ''; // 首屏内容缓存
   DateTime? _lastTapTime; // 记录上次点击时间
-  
+
+  // 系统导航栏的背景颜色
+  Color _backgroundColor = Colors.transparent;
   // 用于保存当前页面的文本样式和尺寸
   TextStyle? _currentStyle;
   Size? _currentSize;
@@ -41,9 +43,7 @@ class _ReaderPageState extends State<ReaderPage> {
     _currentPageIndex = widget.initialPageIndex;
 
     // 初始化PageController，避免在build中初始化导致的重建
-    _pageController = PageController(
-      initialPage: _currentPageIndex,
-    );
+    _pageController = PageController(initialPage: _currentPageIndex);
 
     // 如果初始页码为0，再尝试从provider获取保存的阅读进度
     if (_currentPageIndex == 0) {
@@ -84,7 +84,8 @@ class _ReaderPageState extends State<ReaderPage> {
           await widget.controller.getPageContentAsync(_currentPageIndex);
         }
         // 预加载前一页（如果存在）
-        if (_currentPageIndex > 0 && widget.controller.isValidPageIndex(_currentPageIndex - 1)) {
+        if (_currentPageIndex > 0 &&
+            widget.controller.isValidPageIndex(_currentPageIndex - 1)) {
           await widget.controller.getPageContentAsync(_currentPageIndex - 1);
         }
         // 预加载后一页（如果存在）
@@ -180,141 +181,137 @@ class _ReaderPageState extends State<ReaderPage> {
       setState(() {
         _showUIOverlay = !_showUIOverlay;
       });
+      final provider = Provider.of<NovelProvider>(context, listen: false);
+      _backgroundColor = _showUIOverlay ? provider.themeColor : Colors.transparent;
     }
     _lastTapTime = currentTime;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final style = const TextStyle(fontSize: 18, height: 1.8);
+@override
+Widget build(BuildContext context) {
+  final style = const TextStyle(fontSize: 18, height: 1.8);
 
-    final currentContext = context;
-      return PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, result) async {
-          if (didPop) return;
-          await _saveReadingProgress();
-          if (mounted) {
-            Navigator.pop(currentContext);
-          }
-        },
-        child: Scaffold(
-          appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(0),
-            child: AppBar(elevation: 0),
-          ),
-          body: GestureDetector(
-            onTap: _handleTap,
-            behavior: HitTestBehavior.opaque,
-            child: Stack(
-              children: [
-                LayoutBuilder(
-                  builder: (ctx, c) {
-                    if (!_ready) {
-                      // 保存当前样式和尺寸
-                      _currentStyle = style;
-                      _currentSize = c.biggest;
-                      
-                      // 快速加载首屏内容以立即显示
-                      _loadFirstScreenContent(c.biggest, style);
+  final currentContext = context;
 
-                      // 同时在后台加载完整内容
-                      widget.controller.load(c.biggest, style).then((_) async {
-                        if (mounted) {
-                          // 预加载目标页面和相邻页面
-                          _preLoadTargetPage();
-                          
-                          setState(() => _ready = true);
-                          // 等待一小段时间确保页面控制器就绪
-                          await Future.delayed(
-                            const Duration(milliseconds: 50),
-                          );
-                          // 使用专门的进度恢复方法
-                          _restoreReadingPosition();
-                        }
-                      });
+  return StatusBarStyle(
+    // ✅ 阅读器典型：沉浸 + 白底黑字
+    backgroundColor: _backgroundColor,
+    // 如果你以后有夜间模式，这里只改颜色即可
+    // backgroundColor: isDarkMode ? Colors.black : Colors.white,
 
-                      // 显示首屏内容或加载指示器
-                      return Container(
-                        color: Colors.white,
-                        child: _firstScreenReady && _firstScreenContent.isNotEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: SingleChildScrollView(
-                                  child: Text(_firstScreenContent, style: style),
-                                ),
-                              )
-                            : Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.0,
-                                    color: Theme.of(context).primaryColor,
-                                  ),
+    child: PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _saveReadingProgress();
+        if (mounted) {
+          Navigator.pop(currentContext);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+
+        // ❌ 不要再用 AppBar.systemOverlayStyle
+        appBar: const PreferredSize(
+          preferredSize: Size.fromHeight(0),
+          child: SizedBox.shrink(),
+        ),
+
+        body: GestureDetector(
+          onTap: _handleTap,
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            children: [
+              LayoutBuilder(
+                builder: (ctx, c) {
+                  if (!_ready) {
+                    _currentStyle = style;
+                    _currentSize = c.biggest;
+
+                    _loadFirstScreenContent(c.biggest, style);
+
+                    widget.controller.load(c.biggest, style).then((_) async {
+                      if (!mounted) return;
+
+                      _preLoadTargetPage();
+                      setState(() => _ready = true);
+
+                      await Future.delayed(const Duration(milliseconds: 50));
+                      _restoreReadingPosition();
+                    });
+
+                    return Container(
+                      color: Colors.white,
+                      child: _firstScreenReady && _firstScreenContent.isNotEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: SingleChildScrollView(
+                                child: Text(
+                                  _firstScreenContent,
+                                  style: style,
                                 ),
                               ),
-                      );
-                    }
-
-                    return PageView.builder(
-                      controller: _pageController,
-                      itemCount: widget.controller.totalPages,
-                      onPageChanged: (index) {
-                        // 确保索引在有效范围内
-                        if (index >= 0 &&
-                            index < widget.controller.totalPages) {
-                          setState(() {
-                            _currentPageIndex = index;
-                          });
-                        }
-                      },
-                      itemBuilder: (_, i) {
-                        // 使用自定义的页面内容组件，避免FutureBuilder的重建问题
-                        return _PageContentWidget(
-                          controller: widget.controller,
-                          pageIndex: i,
-                          style: style,
-                        );
-                      },
+                            )
+                          : const Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
                     );
-                  },
-                ),
-                // UI弹窗（点击时显示）
-                if (_showUIOverlay)
-                  ReaderUIOverlay(
-                    novelTitle: widget.controller.novelTitle ?? '阅读器',
-                    currentPage: _currentPageIndex + 1,
-                    totalPages: widget.controller.totalPages,
-                    onBack: () async {
-                      await _saveReadingProgress();
-                      if (mounted) {
-                        Navigator.pop(currentContext);
+                  }
+
+                  return PageView.builder(
+                    controller: _pageController,
+                    itemCount: widget.controller.totalPages,
+                    onPageChanged: (index) {
+                      if (index >= 0 &&
+                          index < widget.controller.totalPages) {
+                        setState(() {
+                          _currentPageIndex = index;
+                        });
                       }
                     },
-                    onCatalog: () {
-                      // 目录
-                      print('目录');
+                    itemBuilder: (_, i) {
+                      return _PageContentWidget(
+                        controller: widget.controller,
+                        pageIndex: i,
+                        style: style,
+                      );
                     },
-                    onReadAloud: () {
-                      // 朗读
-                      print('朗读');
-                    },
-                    onInterface: () {
-                      // 界面
-                      print('界面');
-                    },
-                    onSettings: () {
-                      // 设置
-                      print('设置');
-                    },
-                  ),
-              ],
-            ),
+                  );
+                },
+              ),
+
+              /// UI Overlay（不会再影响状态栏）
+              if (_showUIOverlay)
+                ReaderUIOverlay(
+                  novelTitle:
+                      widget.controller.novelTitle ?? '阅读器',
+                  currentPage: _currentPageIndex + 1,
+                  totalPages: widget.controller.totalPages,
+                  onBack: () async {
+                    await _saveReadingProgress();
+                    if (mounted) {
+                      Navigator.pop(currentContext);
+                    }
+                  },
+                  onCatalog: () {},
+                  onReadAloud: () {},
+                  onInterface: () {},
+                  onSettings: () {},
+                ),
+            ],
           ),
         ),
-    );
-  }
+      ),
+    ),
+  );
+}
+
 }
 
 /// 自定义页面内容组件，避免FutureBuilder的重建问题
@@ -358,17 +355,18 @@ class _PageContentWidgetState extends State<_PageContentWidget> {
     setState(() {
       _isLoading = true;
     });
-    
-    _contentFuture = widget.controller.getPageContentAsync(widget.pageIndex)
-      .then((content) {
-        if (mounted) {
-          setState(() {
-            _content = content;
-            _isLoading = false;
-          });
-        }
-        return content;
-      });
+
+    _contentFuture = widget.controller
+        .getPageContentAsync(widget.pageIndex)
+        .then((content) {
+          if (mounted) {
+            setState(() {
+              _content = content;
+              _isLoading = false;
+            });
+          }
+          return content;
+        });
   }
 
   @override
@@ -378,10 +376,7 @@ class _PageContentWidgetState extends State<_PageContentWidget> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: SingleChildScrollView(
-            child: Text(
-              _content,
-              style: widget.style,
-            ),
+            child: Text(_content, style: widget.style),
           ),
         ),
         if (_isLoading)
@@ -392,9 +387,7 @@ class _PageContentWidgetState extends State<_PageContentWidget> {
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.0,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2.0),
                 ),
               ),
             ),
