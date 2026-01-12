@@ -19,9 +19,11 @@ class ReaderPage extends StatefulWidget {
 
 class _ReaderPageState extends State<ReaderPage> {
   bool _ready = false;
+  bool _firstScreenReady = false; // 是否已准备好首屏内容
   int _currentPageIndex = 0;
   int? _lastPreloadedPage;
   late PageController _pageController;
+  String _firstScreenContent = ''; // 首屏内容缓存
 
   @override
   void initState() {
@@ -37,6 +39,20 @@ class _ReaderPageState extends State<ReaderPage> {
         }
       } catch (_) {}
     });
+  }
+
+  /// 加载首屏内容并显示
+  void _loadFirstScreenContent(Size size, TextStyle style) {
+    if (!_firstScreenReady) {
+      widget.controller.getFirstScreenContent(size, style).then((content) {
+        if (mounted) {
+          setState(() {
+            _firstScreenContent = content;
+            _firstScreenReady = true;
+          });
+        }
+      });
+    }
   }
 
   @override
@@ -94,6 +110,10 @@ class _ReaderPageState extends State<ReaderPage> {
               // 初始化PageController时设置初始页面
               _pageController = PageController(initialPage: _currentPageIndex);
               
+              // 快速加载首屏内容以立即显示
+              _loadFirstScreenContent(c.biggest, style);
+              
+              // 同时在后台加载完整内容
               widget.controller
                   .load(c.biggest, style)
                   .then((_) async {
@@ -110,25 +130,40 @@ class _ReaderPageState extends State<ReaderPage> {
                       }
                     }
                   });
+              
+              // 显示首屏内容或加载指示器
               return Container(
                 color: Colors.white,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const CircularProgressIndicator(),
+                    if (_firstScreenReady && _firstScreenContent.isNotEmpty)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: SingleChildScrollView(
+                            child: Text(
+                              _firstScreenContent,
+                              style: style,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      const CircularProgressIndicator(),
                     const SizedBox(height: 20),
                     Text(
-                      '正在加载小说内容...',
+                      _firstScreenReady ? '首屏内容已加载' : '正在准备阅读环境...',
                       style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      widget.controller.isLoading ? '处理中，请稍候...' : '已完成',
+                      widget.controller.isLoading ? '后台处理中...' : '加载完成',
                       style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      '大文件需要更多处理时间，请耐心等待',
+                      '完整内容在后台加载中',
                       style: TextStyle(fontSize: 12, color: Colors.blue[300]),
                     ),
                   ],

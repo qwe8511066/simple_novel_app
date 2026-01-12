@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'pagination_engine.dart';
@@ -16,10 +17,19 @@ class ReaderController extends ChangeNotifier {
   List<String>? _lines;
   int? _estimatedTotalPages;
   bool _isLoading = false;
+  
+  // 快速加载相关变量
+  String? _firstScreenContent;
+  bool _firstScreenLoaded = false;
+  bool _fullContentLoaded = false;
 
   ReaderController(this.utf8File, {this.novelTitle});
 
   bool get isLoading => _isLoading;
+  
+  bool get firstScreenLoaded => _firstScreenLoaded;
+  bool get fullContentLoaded => _fullContentLoaded;
+  String? get firstScreenContent => _firstScreenContent;
 
   /// 流式加载文本内容，但不立即进行完整分页
   Future<void> load(Size size, TextStyle style) async {
@@ -67,6 +77,7 @@ class ReaderController extends ChangeNotifier {
       // 不保存完整分页到缓存，而是仅缓存原始文本内容
       // 这样可以更快地初始化
       
+      _fullContentLoaded = true;
       notifyListeners();
     } catch (e) {
       debugPrint('加载文件失败: $e');
@@ -87,6 +98,62 @@ class ReaderController extends ChangeNotifier {
   /// 获取总页数
   int get totalPages => _estimatedTotalPages ?? 0;
 
+  /// 快速获取文件开头内容以立即显示首屏
+  Future<String> getFirstScreenContent(Size size, TextStyle style) async {
+    if (_firstScreenContent != null) {
+      return _firstScreenContent!;
+    }
+    
+    try {
+      // 读取文件开头的字节（例如前10KB）
+      final fileBytes = await utf8File.readAsBytes();
+      final headerBytes = fileBytes.length > 10240 ? fileBytes.sublist(0, 10240) : fileBytes;
+      
+      // 解码为字符串
+      String headerContent = utf8.decode(headerBytes);
+      
+      // 将内容分割为行
+      final lines = LineSplitter().convert(headerContent);
+      
+      // 快速分页以获取第一页内容
+      final firstPageLines = _getPageLines(lines, size, style);
+      _firstScreenContent = firstPageLines.join('\n');
+      _firstScreenLoaded = true;
+      
+      notifyListeners();
+      
+      return _firstScreenContent!;
+    } catch (e) {
+      debugPrint('获取首屏内容失败: $e');
+      return '无法加载首屏内容';
+    }
+  }
+  
+  /// 快速分页算法 - 仅计算第一页内容
+  List<String> _getPageLines(List<String> lines, Size size, TextStyle style) {
+    final page = <String>[];
+    double height = 0;
+    
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final tp = TextPainter(
+        text: TextSpan(text: line, style: style),
+        maxLines: null,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width - 32);
+      
+      // 检查是否会超出页面高度
+      if (height + tp.height > size.height - 32 && page.isNotEmpty) {
+        break; // 已经填满一页，停止添加内容
+      }
+      
+      page.add(line);
+      height += tp.height;
+    }
+    
+    return page;
+  }
+  
   /// 预加载相邻页面以提高浏览体验
   Future<void> preloadAdjacentPages(int currentIndex) async {
     if (_paginationEngine != null) {
