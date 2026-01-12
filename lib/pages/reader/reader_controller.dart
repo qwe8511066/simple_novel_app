@@ -3,14 +3,14 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'pagination_cache.dart';
-import 'on_demand_pagination.dart';
+import 'optimized_pagination.dart';
 
 class ReaderController extends ChangeNotifier {
   final File utf8File;
   final String? novelTitle;
   
-  // 按需分页引擎
-  OnDemandPaginationEngine? _paginationEngine;
+  // 优化的按需分页引擎
+  OptimizedPaginationEngine? _paginationEngine;
   List<String>? _lines;
   int? _estimatedTotalPages;
   bool _isLoading = false;
@@ -52,7 +52,7 @@ class ReaderController extends ChangeNotifier {
           _lines!.add(line);
           if (_lines!.length > 5000) break; // 只读取前5000行用于引擎初始化
         }
-        _paginationEngine = OnDemandPaginationEngine(
+        _paginationEngine = OptimizedPaginationEngine(
           lines: _lines!,
           style: style,
           size: size,
@@ -75,7 +75,7 @@ class ReaderController extends ChangeNotifier {
           
           // 在加载过程中持续估算总页数，让用户感觉加载更快
           if (_paginationEngine == null && _lines!.length > 100) {
-            _paginationEngine = OnDemandPaginationEngine(
+            _paginationEngine = OptimizedPaginationEngine(
               lines: _lines!,
               style: style,
               size: size,
@@ -87,7 +87,7 @@ class ReaderController extends ChangeNotifier {
       }
 
       // 创建按需分页引擎
-      _paginationEngine = OnDemandPaginationEngine(
+      _paginationEngine = OptimizedPaginationEngine(
         lines: _lines!,
         style: style,
         size: size,
@@ -112,7 +112,7 @@ class ReaderController extends ChangeNotifier {
   Future<String> getPageContentAsync(int index) async {
     if (_paginationEngine != null && index >= 0 && index < (_estimatedTotalPages ?? 0)) {
       final pageContent = await _paginationEngine!.getPageContent(index);
-      return pageContent.join('\n');
+      return pageContent.join('\\n');
     }
     return '';
   }
