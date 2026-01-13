@@ -32,6 +32,12 @@ class _ReaderPageState extends State<ReaderPage> {
   /// 当前章节索引
   int _currentChapterIndex = 0;
 
+  /// 从持久化进度恢复时保存的章节索引（优先用章节来还原页码）
+  int? _savedChapterIndexFromStorage;
+
+  /// 是否已经根据持久化进度完成过一次恢复，避免重复恢复导致位置抖动
+  bool _restoredFromStorage = false;
+
   int? _lastPreloadedPage;
   PageController? _pageController;
   String _firstScreenContent = ''; // 首屏内容缓存
@@ -71,6 +77,14 @@ class _ReaderPageState extends State<ReaderPage> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           widget.controller.parseChapters();
         });
+      }
+
+      // 关键：当控制器状态变化（特别是章节解析完成、分页重建）后，
+      // 如果还没有从持久化进度恢复过位置，尝试恢复一次
+      // 但恢复逻辑内部会检查分页引擎是否已重建完成，确保在正确时机执行
+      if (!_restoredFromStorage) {
+        // 使用Future.microtask确保在当前帧结束后执行恢复操作
+        Future.microtask(() => _restoreReadingPosition());
       }
     }
   }
@@ -115,31 +129,91 @@ class _ReaderPageState extends State<ReaderPage> {
   }
 
   /// 根据保存的进度精确恢复阅读位置
+  /// 重要：必须等待分页引擎基于章节锚点重建完成后才执行恢复
   Future<void> _restoreReadingPosition() async {
-    // 确保页面已经完全加载并且有有效的页码
-    if (widget.controller.fullContentLoaded &&
-        _currentPageIndex >= 0 &&
-        widget.controller.isValidPageIndex(_currentPageIndex)) {
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted &&
-              widget.controller.isValidPageIndex(_currentPageIndex) &&
-              _pageController != null) {
-            // 使用更平滑的跳转方式，减少视觉跳跃感
-            // 如果页面索引为0，直接跳转；否则使用较短的动画
-            if (_currentPageIndex == 0) {
-              _pageController?.jumpToPage(_currentPageIndex);
-            } else {
-              // 使用非常短的动画时间来平滑过渡，减少跳跃感
-              _pageController?.animateToPage(
-                _currentPageIndex,
-                duration: const Duration(milliseconds: 100),
-                curve: Curves.easeInOut,
-              );
-            }
-          }
-        });
+    // 已经成功恢复过一次位置则不再重复
+    if (_restoredFromStorage) return;
+
+    // 1. 必须等待内容完全加载
+    if (!widget.controller.fullContentLoaded) {
+      debugPrint('恢复位置：等待内容加载完成');
+      return;
+    }
+
+    // 2. 关键：必须等待分页引擎基于章节锚点重建完成
+    // 如果分页引擎还没重建，页码映射是错的，恢复会错乱
+    if (!widget.controller.paginationRebuiltWithChapters) {
+      debugPrint('恢复位置：等待分页引擎基于章节锚点重建完成');
+      return;
+    }
+
+    // 3. 如果有章节索引，优先使用「章节索引」来恢复位置
+    if (_savedChapterIndexFromStorage != null) {
+      if (!(widget.controller.chaptersLoaded &&
+          widget.controller.chapters != null &&
+          _savedChapterIndexFromStorage! >= 0 &&
+          _savedChapterIndexFromStorage! < (widget.controller.chapters?.length ?? 0))) {
+        // 章节信息尚未就绪，稍后再尝试
+        debugPrint('恢复位置：等待章节信息就绪');
+        return;
       }
+
+      try {
+        final chapterIndex = _savedChapterIndexFromStorage!;
+        debugPrint('恢复位置：使用章节索引 $chapterIndex');
+        
+        // 根据章节索引精确计算对应页码（此时分页引擎已重建，页码映射正确）
+        final targetPageIndex = await widget.controller.getPageIndexByChapterIndex(chapterIndex);
+        
+        debugPrint('恢复位置：章节 $chapterIndex 对应页码 $targetPageIndex');
+
+        if (!mounted) return;
+
+        setState(() {
+          _currentPageIndex = targetPageIndex;
+          _currentChapterIndex = chapterIndex;
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _pageController == null) return;
+          _pageController!.jumpToPage(targetPageIndex);
+          debugPrint('恢复位置：已跳转到页码 $targetPageIndex（章节 $chapterIndex）');
+        });
+
+        _restoredFromStorage = true;
+        _savedChapterIndexFromStorage = null;
+      } catch (e) {
+        debugPrint('根据章节恢复阅读位置失败: $e');
+      }
+      return;
+    }
+
+    // 4. 没有章节信息时，退回到旧的：按页码恢复（但也要等分页重建完成）
+    if (_currentPageIndex >= 0 &&
+        widget.controller.isValidPageIndex(_currentPageIndex)) {
+      if (!mounted) return;
+
+      debugPrint('恢复位置：使用页码 $_currentPageIndex（无章节信息）');
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            !widget.controller.isValidPageIndex(_currentPageIndex) ||
+            _pageController == null) {
+          return;
+        }
+
+        if (_currentPageIndex == 0) {
+          _pageController!.jumpToPage(_currentPageIndex);
+        } else {
+          _pageController!.animateToPage(
+            _currentPageIndex,
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+
+      _restoredFromStorage = true;
     }
   }
 
@@ -158,16 +232,24 @@ class _ReaderPageState extends State<ReaderPage> {
     if (!mounted) return;
 
     try {
+      // 确保当前章节索引是有效的
+      int validChapterIndex = _currentChapterIndex;
+      if (widget.controller.chapters != null && widget.controller.chapters!.isNotEmpty) {
+        validChapterIndex = validChapterIndex.clamp(0, widget.controller.chapters!.length - 1);
+      }
+      
       final novelProvider = Provider.of<NovelProvider>(context, listen: false);
       await novelProvider.updateReadingProgress(
         widget.novelId,
         0,
         0.0,
         pageIndex: _currentPageIndex,
-        durChapterIndex: _currentChapterIndex, // 使用计算的当前章节索引
+        durChapterIndex: validChapterIndex, // 使用有效的当前章节索引
         durChapterPos: 0, // 暂时设为0，后续可以根据实际位置逻辑调整
         durChapterPage: _currentPageIndex, // 保存当前页码作为durChapterPage
       );
+      
+      debugPrint('保存阅读进度: 章节$validChapterIndex, 页码$_currentPageIndex');
     } catch (e) {
       debugPrint('保存阅读进度失败: $e');
     }
@@ -183,18 +265,16 @@ class _ReaderPageState extends State<ReaderPage> {
         if (mounted) {
           setState(() {
             _currentPageIndex = novel.durChapterPage!;
-            // 如果有保存的章节索引，直接使用
+            // 如果有保存的章节索引，记录下来，待内容和章节解析完成后再用章节精确恢复
             if (novel.durChapterIndex != null) {
-              _currentChapterIndex = novel.durChapterIndex!;
+              _savedChapterIndexFromStorage = novel.durChapterIndex!;
             }
-            _pageController?.jumpToPage(_currentPageIndex);
           });
         }
       } else if (novel.currentPageIndex != null && novel.currentPageIndex! > 0) {
         if (mounted) {
           setState(() {
             _currentPageIndex = novel.currentPageIndex!;
-            _pageController?.jumpToPage(_currentPageIndex);
           });
         }
       }
@@ -243,6 +323,22 @@ class _ReaderPageState extends State<ReaderPage> {
       });
     }
     _lastTapTime = currentTime;
+  }
+
+  /// 打开目录前，先根据当前页精确更新一次章节索引，保证高亮正确
+  void _openCatalog() async {
+    try {
+      await _updateCurrentChapterIndex();
+    } catch (e) {
+      debugPrint('打开目录前更新章节索引失败: $e');
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _showUIOverlay = false;
+      _showCatalogOverlay = true;
+    });
   }
 
 @override
@@ -360,7 +456,8 @@ Widget build(BuildContext context) {
                   novelTitle:
                       widget.controller.novelTitle ?? '阅读器',
                   currentPage: _currentPageIndex + 1,
-                  totalPages: widget.controller.totalPages,
+                  // 顶部 UI 里展示的总页数，用实际估算值，不带额外缓冲
+                  totalPages: widget.controller.actualTotalPages,
                   onBack: () async {
                     await _saveReadingProgress();
                     if (mounted) {
@@ -368,12 +465,7 @@ Widget build(BuildContext context) {
                     }
                   },
                   // 点击了目录
-                  onCatalog: () {
-                    setState(() {
-                      _showUIOverlay = false;
-                      _showCatalogOverlay = true;
-                    });
-                  },
+                  onCatalog: _openCatalog,
                   // 点击了朗读
                   onReadAloud: () {},
                   // 点击了界面
@@ -388,6 +480,8 @@ Widget build(BuildContext context) {
                   novelTitle: widget.controller.novelTitle ?? '阅读器',
                   currentChapterIndex: _currentChapterIndex,
                   totalChapters: widget.controller.chapters?.length ?? 0,
+                  totalPages: widget.controller.actualTotalPages,
+                  currentPageIndex: _currentPageIndex,
                   chapterTitles: widget.controller.chapters?.map((c) => c.title).toList() ?? [],
                   onBack: () {
                     setState(() {
@@ -397,21 +491,88 @@ Widget build(BuildContext context) {
                   onChapterSelect: (chapterIndex) async {
                     // 根据章节索引计算页码并跳转
                     if (widget.controller.chapters != null && chapterIndex >= 0 && chapterIndex < widget.controller.chapters!.length) {
-                      // 获取目标章节对应的页码
-                      final targetPageIndex = await widget.controller.getPageIndexByChapterIndex(chapterIndex);
-                       
-                      // 更新当前页码、章节索引并跳转
-                      setState(() {
-                        _showCatalogOverlay = false;
-                        _currentPageIndex = targetPageIndex;
-                        // 直接设置当前章节索引为用户点击的章节索引，避免后续更新错误
-                        _currentChapterIndex = chapterIndex;
+                      // 先预计算目标章节附近的页面边界，提高跳转准确性
+                      // 获取目标章节对应的行号
+                      final targetLineIndex = widget.controller.getLineIndexByChapterIndex(chapterIndex);
+                      
+                      // 估算目标页码的大致范围
+                      final estimatedPage = widget.controller.estimatePageFromLineIndex(targetLineIndex);
+                      
+                      // 预计算目标页面前后几页的边界，确保跳转准确
+                      // 预计算范围：目标页码前后各5页
+                      final preloadStart = (estimatedPage - 5).clamp(0, double.infinity).toInt();
+                      final preloadEnd = estimatedPage + 5;
+                      
+                      // 异步预计算这些页面的边界（不阻塞UI）
+                      Future.microtask(() async {
+                        for (int i = preloadStart; i <= preloadEnd; i++) {
+                          try {
+                            await widget.controller.getStartLineIndexByPageIndexAsync(i);
+                            // 同时预加载页面内容，确保边界计算准确
+                            await widget.controller.getPageContentAsync(i);
+                          } catch (e) {
+                            // 忽略预加载错误，不影响主流程
+                          }
+                        }
                       });
-                       
+                      
+                      // 获取目标章节对应的精确页码
+                      final targetPageIndex = await widget.controller.getPageIndexByChapterIndex(chapterIndex);
+                        
+                      // 更新当前页码、章节索引并跳转
+                      if (mounted) {
+                        setState(() {
+                          _showCatalogOverlay = false;
+                          _currentPageIndex = targetPageIndex;
+                          // 直接设置当前章节索引为用户点击的章节索引，避免后续更新错误
+                          _currentChapterIndex = chapterIndex;
+                        });
+                      }
+                        
+                      // 注意：不再清理所有分页缓存，因为我们已经预计算了目标页面附近的边界
+                      // 只清理页面内容缓存，保留页面边界缓存
+                      widget.controller.clearPageContentCacheOnly();
+                        
                       // 跳转到目标页码
                       if (_pageController != null && mounted) {
-                        _pageController!.jumpToPage(targetPageIndex);
+                        _pageController!.animateToPage(
+                          targetPageIndex,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
                       }
+                    }
+                  },
+                  onPageSelect: (pageIndex) async {
+                    // 直接跳转到指定页码
+                    if (mounted) {
+                      setState(() {
+                        _showCatalogOverlay = false;
+                        _currentPageIndex = pageIndex;
+                      });
+                    }
+                    
+                    // 清理所有分页缓存，避免缓存污染
+                    widget.controller.clearAllPaginationCache();
+                    
+                    // 更新当前章节索引
+                    // 首先获取该页码对应的起始行号
+                    final startLineIndex = await widget.controller.getStartLineIndexByPageIndexAsync(pageIndex);
+                    // 然后根据起始行号获取章节索引
+                    final chapterIndex = widget.controller.getChapterIndexByLineIndex(startLineIndex);
+                    if (mounted) {
+                      setState(() {
+                        _currentChapterIndex = chapterIndex;
+                      });
+                    }
+                    
+                    // 跳转到目标页码
+                    if (_pageController != null && mounted) {
+                      _pageController!.animateToPage(
+                        pageIndex,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
                     }
                   },
                 )

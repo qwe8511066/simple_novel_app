@@ -22,6 +22,10 @@ class OptimizedPaginationEngine {
   final int capacity; // 缓存容量
   final double lineHeightEstimate;
 
+  /// 强制起页的行号集合（通常是每一章标题所在的行号）
+  /// 只要遇到这些行，且当前页已有内容，就会强制换页，保证章节标题出现在页首
+  final Set<int>? forcedPageStartLineIndices;
+
   // 页面内容缓存
   final Map<int, List<String>> _pageCache = {};
   // 行高度缓存
@@ -36,11 +40,22 @@ class OptimizedPaginationEngine {
     required this.style,
     required this.size,
     this.capacity = 50, // 默认缓存50页
+    this.forcedPageStartLineIndices,
   }) : lineHeightEstimate = _estimateLineHeight(style);
+
+  /// 是否需要在当前行强制开启新的一页
+  bool _shouldForceNewPageAt(int lineIndex, bool pageHasContent) {
+    if (!pageHasContent) return false;
+    if (forcedPageStartLineIndices == null || forcedPageStartLineIndices!.isEmpty) {
+      return false;
+    }
+    return forcedPageStartLineIndices!.contains(lineIndex);
+  }
 
   /// 估算单行高度
   static double _estimateLineHeight(TextStyle style) {
-    return (style.fontSize ?? 16.0) * (style.height ?? 1.8);
+    // 使用更准确的方法估算行高，考虑字体大小和行间距
+    return (style.fontSize ?? 16.0) * (style.height ?? 1.2);
   }
 
   /// 获取指定页的内容
@@ -99,12 +114,17 @@ class OptimizedPaginationEngine {
     while (lineIndex < lines.length) {
       final line = lines[lineIndex];
       final lineHeight = _getLineHeight(lineIndex, line);
+
+      // 如果遇到强制起页行，并且当前页已有内容，则结束当前页
+      if (_shouldForceNewPageAt(lineIndex, page.isNotEmpty)) {
+        break;
+      }
       
       // 检查是否超出页面高度
       if (height + lineHeight > size.height - 32 && page.isNotEmpty) {
         break; // 超出页面高度且页面已有内容，结束当前页
       }
-
+      
       page.add(line);
       height += lineHeight;
       lineIndex++;
@@ -160,7 +180,10 @@ class OptimizedPaginationEngine {
       final line = lines[lineIndex];
       final lineHeight = _getLineHeight(lineIndex, line);
 
-      if (currentHeight + lineHeight > size.height - 32 && currentPageIndex < targetPageIndex) {
+      final bool forceNewPageHere = _shouldForceNewPageAt(lineIndex, currentHeight > 0);
+
+      if ((currentHeight + lineHeight > size.height - 32 || forceNewPageHere) &&
+          currentPageIndex < targetPageIndex) {
         // 开始新页面
         _pageBoundaries[currentPageIndex] = PageBoundary(
           startIndex: currentPageStartIndex,
@@ -170,7 +193,8 @@ class OptimizedPaginationEngine {
         currentPageIndex++;
         currentHeight = 0;
         currentPageStartIndex = lineIndex; // 更新新页面的起始索引
-      } else if (currentHeight + lineHeight > size.height - 32 && currentPageIndex == targetPageIndex) {
+      } else if ((currentHeight + lineHeight > size.height - 32 || forceNewPageHere) &&
+          currentPageIndex == targetPageIndex) {
         // 达到目标页面且高度超限，记录边界
         _pageBoundaries[currentPageIndex] = PageBoundary(
           startIndex: currentPageStartIndex,
@@ -219,7 +243,9 @@ class OptimizedPaginationEngine {
       final line = lines[lineIndex];
       final lineHeight = _getLineHeight(lineIndex, line);
 
-      if (currentHeight + lineHeight > size.height - 32) {
+      final bool forceNewPageHere = _shouldForceNewPageAt(lineIndex, currentHeight > 0);
+
+      if (currentHeight + lineHeight > size.height - 32 || forceNewPageHere) {
         // 开始新页面
         _pageBoundaries[currentPageIndex] = PageBoundary(
           startIndex: currentPageStartIndex,
@@ -242,7 +268,10 @@ class OptimizedPaginationEngine {
       final line = lines[lineIndex];
       final lineHeight = _getLineHeight(lineIndex, line);
 
-      if (currentHeight + lineHeight > size.height - 32 && targetPage.isNotEmpty) {
+      final bool forceNewPageHere = _shouldForceNewPageAt(lineIndex, targetPage.isNotEmpty);
+
+      if ((currentHeight + lineHeight > size.height - 32 || forceNewPageHere) &&
+          targetPage.isNotEmpty) {
         // 页面满了，记录边界
         _pageBoundaries[currentPageIndex] = PageBoundary(
           startIndex: lineIndex - targetPage.length,
@@ -342,13 +371,31 @@ class OptimizedPaginationEngine {
   int estimateTotalPages() {
     if (lines.isEmpty) return 0;
 
-    // 使用估算值来快速计算总页数
+    // 使用更准确的方法估算总页数
+    // 首先获取实际计算过的页面行数统计
+    final List<int> pageLineCounts = [];
+    for (int pageIndex in _pageBoundaries.keys) {
+      final boundary = _pageBoundaries[pageIndex]!;
+      pageLineCounts.add(boundary.endIndex - boundary.startIndex + 1);
+    }
+
+    // 如果有实际计算过的页面，使用平均值
+    if (pageLineCounts.isNotEmpty) {
+      final averageLinesPerPage = pageLineCounts.reduce((a, b) => a + b) ~/ pageLineCounts.length;
+      if (averageLinesPerPage > 0) {
+        // 使用更准确的估算，增加5%的缓冲
+        return (lines.length / averageLinesPerPage * 1.05).ceil();
+      }
+    }
+
+    // 否则使用估算值
     final estimatedPageHeight = size.height - 32;
     final estimatedLinesPerPage = (estimatedPageHeight / lineHeightEstimate).floor();
 
     if (estimatedLinesPerPage <= 0) return 1;
-
-    return (lines.length / estimatedLinesPerPage).ceil();
+    
+    // 使用更准确的估算，增加5%的缓冲
+    return (lines.length / estimatedLinesPerPage * 1.05).ceil();
   }
 
   /// 预加载相邻页面
@@ -374,11 +421,97 @@ class OptimizedPaginationEngine {
     await Future.wait(futures);
   }
 
-  /// 清除缓存
+  /// 根据行号精确查找所在的页码
+  /// 说明：
+  /// - 仅依赖实际的行高和分页规则，不依赖估算的总页数
+  /// - 在向前遍历行的过程中，顺带填充 _pageBoundaries，后续跳转会更快更准
+  Future<int> findPageIndexByLineIndex(int targetLineIndex) async {
+    if (lines.isEmpty) return 0;
+    if (targetLineIndex <= 0) return 0;
+    if (targetLineIndex >= lines.length) {
+      // 超出范围时，返回最后一页的索引（需要根据已知边界大致估算）
+      if (_pageBoundaries.isNotEmpty) {
+        return _pageBoundaries.keys.reduce((a, b) => a > b ? a : b);
+      }
+      return 0;
+    }
+
+    final double maxPageHeight = size.height - 32;
+
+    int pageIndex = 0;
+    int lineIndex = 0;
+    double currentHeight = 0;
+    int currentPageStartIndex = 0;
+
+    while (lineIndex < lines.length) {
+      final line = lines[lineIndex];
+      final lineHeight = _getLineHeight(lineIndex, line);
+
+      final bool forceNewPageHere = _shouldForceNewPageAt(lineIndex, currentHeight > 0);
+
+      // 如果再加这一行会超出页面高度，或遇到强制起页行，并且当前页已经有内容，则先收一个页面
+      if ((currentHeight + lineHeight > maxPageHeight || forceNewPageHere) &&
+          currentPageStartIndex <= lineIndex - 1) {
+        // 记录当前页边界
+        _pageBoundaries[pageIndex] = PageBoundary(
+          startIndex: currentPageStartIndex,
+          endIndex: lineIndex - 1,
+          height: currentHeight,
+        );
+
+        // 如果目标行在这个页面范围内，直接返回
+        if (targetLineIndex >= currentPageStartIndex && targetLineIndex <= lineIndex - 1) {
+          return pageIndex;
+        }
+
+        // 开始新的一页
+        pageIndex++;
+        currentHeight = 0;
+        currentPageStartIndex = lineIndex;
+      }
+
+      // 此时 lineIndex 属于当前页
+      if (lineIndex == targetLineIndex) {
+        return pageIndex;
+      }
+
+      currentHeight += lineHeight;
+      lineIndex++;
+
+      // 避免长时间阻塞 UI
+      if (lineIndex % 500 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    // 最后一页边界
+    if (!_pageBoundaries.containsKey(pageIndex)) {
+      _pageBoundaries[pageIndex] = PageBoundary(
+        startIndex: currentPageStartIndex,
+        endIndex: lines.length - 1,
+        height: currentHeight,
+      );
+    }
+
+    // 如果目标行在最后一页（常见于 targetLineIndex 接近文件末尾）
+    if (targetLineIndex >= currentPageStartIndex && targetLineIndex < lines.length) {
+      return pageIndex;
+    }
+
+    // 兜底：返回最后一页
+    return pageIndex;
+  }
+
+  /// 清除所有页面缓存
   void clearCache() {
     _pageCache.clear();
-    _lineHeights.clear();
     _pageBoundaries.clear();
+  }
+  
+  /// 只清除页面内容缓存，保留页面边界缓存（用于章节跳转优化）
+  void clearPageContentCacheOnly() {
+    _pageCache.clear();
     _calculatedPages.clear();
+    // 保留 _pageBoundaries 和 _lineHeights，因为这些对跳转准确性很重要
   }
 }
