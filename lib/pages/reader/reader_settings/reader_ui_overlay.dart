@@ -39,27 +39,31 @@ class ReaderUIOverlay extends StatelessWidget {
             top: statusBarHeight,
             left: 0,
             right: 0,
-            child: Container(
-              color: themeColor,
-              child: AppBar(
-                title: Text(
-                  novelTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
+            child: GestureDetector(
+              // 阻止事件冒泡，点击顶部状态栏不会关闭UI弹窗
+              onTap: () {},
+              child: Container(
+                color: themeColor,
+                child: AppBar(
+                  title: Text(
+                    novelTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  backgroundColor: themeColor,
+                  elevation: 0,
+                  titleTextStyle: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                ),
-                backgroundColor: themeColor,
-                elevation: 0,
-                titleTextStyle: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: onBack,
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: onBack,
+                  ),
                 ),
               ),
             ),
@@ -69,82 +73,98 @@ class ReaderUIOverlay extends StatelessWidget {
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              color: Colors.black54,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                children: [
-                  // 操作按钮
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      // 目录
-                      Column(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.menu_book,
-                              color: Colors.white,
-                            ),
-                            onPressed: onCatalog,
+            child: GestureDetector(
+              // 阻止事件冒泡，点击底部操作栏不会关闭UI弹窗
+              onTap: () {},
+              child: Container(
+                color: Colors.black54,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  children: [
+                    // 操作按钮
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // 目录
+                        GestureDetector(
+                          onTap: onCatalog,
+                          child: Column(
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.menu_book,
+                                  color: Colors.white,
+                                ),
+                                onPressed: onCatalog,
+                              ),
+                              const Text(
+                                '目录',
+                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ],
                           ),
-                          const Text(
-                            '目录',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        // 朗读
+                        GestureDetector(
+                          onTap: onReadAloud,
+                          child: Column(
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.volume_up,
+                                  color: Colors.white,
+                                ),
+                                onPressed: onReadAloud,
+                              ),
+                              const Text(
+                                '朗读',
+                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      // 朗读
-                      Column(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.volume_up,
-                              color: Colors.white,
-                            ),
-                            onPressed: onReadAloud,
+                        ),
+                        // 界面
+                        GestureDetector(
+                          onTap: onInterface,
+                          child: Column(
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.format_color_fill,
+                                  color: Colors.white,
+                                ),
+                                onPressed: onInterface,
+                              ),
+                              const Text(
+                                '界面',
+                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ],
                           ),
-                          const Text(
-                            '朗读',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        // 设置
+                        GestureDetector(
+                          onTap: onSettings,
+                          child: Column(
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.settings,
+                                  color: Colors.white,
+                                ),
+                                onPressed: onSettings,
+                              ),
+                              const Text(
+                                '设置',
+                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      // 界面
-                      Column(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.format_color_fill,
-                              color: Colors.white,
-                            ),
-                            onPressed: onInterface,
-                          ),
-                          const Text(
-                            '界面',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      // 设置
-                      Column(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.settings,
-                              color: Colors.white,
-                            ),
-                            onPressed: onSettings,
-                          ),
-                          const Text(
-                            '设置',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

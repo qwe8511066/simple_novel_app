@@ -71,7 +71,11 @@ class OptimizedPaginationEngine {
     if (_pageBoundaries.containsKey(pageIndex)) {
       final boundary = _pageBoundaries[pageIndex]!;
       final page = <String>[];
-      for (int i = boundary.startIndex; i <= boundary.endIndex && i < lines.length; i++) {
+      
+      // 添加安全检查，确保起始索引不会是负数
+      final safeStartIndex = boundary.startIndex < 0 ? 0 : boundary.startIndex;
+      
+      for (int i = safeStartIndex; i <= boundary.endIndex && i < lines.length; i++) {
         page.add(lines[i]);
       }
       return page;
@@ -150,6 +154,7 @@ class OptimizedPaginationEngine {
     int currentPageIndex = 0;
     int lineIndex = 0;
     double currentHeight = 0;
+    int currentPageStartIndex = 0; // 跟踪当前页面的起始索引
 
     while (currentPageIndex <= targetPageIndex && lineIndex < lines.length) {
       final line = lines[lineIndex];
@@ -158,16 +163,17 @@ class OptimizedPaginationEngine {
       if (currentHeight + lineHeight > size.height - 32 && currentPageIndex < targetPageIndex) {
         // 开始新页面
         _pageBoundaries[currentPageIndex] = PageBoundary(
-          startIndex: lineIndex - _getPageLineCount(currentPageIndex), // 简化的起始位置计算
+          startIndex: currentPageStartIndex,
           endIndex: lineIndex - 1,
           height: currentHeight,
         );
         currentPageIndex++;
         currentHeight = 0;
+        currentPageStartIndex = lineIndex; // 更新新页面的起始索引
       } else if (currentHeight + lineHeight > size.height - 32 && currentPageIndex == targetPageIndex) {
         // 达到目标页面且高度超限，记录边界
         _pageBoundaries[currentPageIndex] = PageBoundary(
-          startIndex: _calculateStartIndexForPage(currentPageIndex),
+          startIndex: currentPageStartIndex,
           endIndex: lineIndex - 1,
           height: currentHeight,
         );
@@ -206,6 +212,7 @@ class OptimizedPaginationEngine {
     int lineIndex = startBoundary.endIndex + 1;
     double currentHeight = 0;
     int currentPageIndex = startPageIndex + 1;
+    int currentPageStartIndex = lineIndex; // 跟踪当前页面的起始索引
 
     // 跳过已知页面
     while (currentPageIndex < targetPageIndex && lineIndex < lines.length) {
@@ -215,12 +222,14 @@ class OptimizedPaginationEngine {
       if (currentHeight + lineHeight > size.height - 32) {
         // 开始新页面
         _pageBoundaries[currentPageIndex] = PageBoundary(
-          startIndex: lineIndex,
-          endIndex: lineIndex - 1, // 这时还没处理当前行
+          startIndex: currentPageStartIndex,
+          endIndex: lineIndex - 1, // 当前行还没处理，所以结束索引是上一行
           height: currentHeight,
         );
         currentPageIndex++;
         currentHeight = 0;
+        currentPageStartIndex = lineIndex; // 更新新页面的起始索引
+        continue; // 不处理当前行，让它在下一个循环中被处理
       }
 
       currentHeight += lineHeight;

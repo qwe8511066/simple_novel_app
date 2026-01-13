@@ -1,8 +1,10 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../utils/statusBarStyle.dart';
 import 'reader_controller.dart';
 import './reader_settings/reader_ui_overlay.dart';
+import './reader_settings/reader_catalog_overlay.dart';
 import '../../providers/novel_provider.dart';
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
@@ -24,14 +26,16 @@ class _ReaderPageState extends State<ReaderPage> {
   bool _ready = false;
   bool _firstScreenReady = false; // 是否已准备好首屏内容
   bool _showUIOverlay = false; // 是否显示UI弹窗
+  bool _showCatalogOverlay = false; // 是否显示目录弹窗
   int _currentPageIndex = 0;
+
+  /// 当前章节索引
+  int _currentChapterIndex = 0;
+
   int? _lastPreloadedPage;
   PageController? _pageController;
   String _firstScreenContent = ''; // 首屏内容缓存
   DateTime? _lastTapTime; // 记录上次点击时间
-
-  // 系统导航栏的背景颜色
-  Color _backgroundColor = Colors.transparent;
   // 用于保存当前页面的文本样式和尺寸
   TextStyle? _currentStyle;
   Size? _currentSize;
@@ -45,32 +49,29 @@ class _ReaderPageState extends State<ReaderPage> {
     // 初始化PageController，避免在build中初始化导致的重建
     _pageController = PageController(initialPage: _currentPageIndex);
 
-    // 如果初始页码为0，再尝试从provider获取保存的阅读进度
-    if (_currentPageIndex == 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final novelProvider = Provider.of<NovelProvider>(
-          context,
-          listen: false,
-        );
-        try {
-          final novel = novelProvider.getNovelById(widget.novelId);
-          // 优先使用Legado风格的坐标系统
-          if (novel.durChapterPage != null && novel.durChapterPage! > 0) {
-            _currentPageIndex = novel.durChapterPage!;
-            // 调整页面控制器到正确的初始页面
-            if (_pageController != null && mounted) {
-              _pageController!.jumpToPage(_currentPageIndex);
-            }
-          } else if (novel.currentPageIndex != null &&
-              novel.currentPageIndex! > 0) {
-            _currentPageIndex = novel.currentPageIndex!;
-            // 调整页面控制器到正确的初始页面
-            if (_pageController != null && mounted) {
-              _pageController!.jumpToPage(_currentPageIndex);
-            }
-          }
-        } catch (_) {}
+    // 添加章节解析完成的监听器
+    widget.controller.addListener(_onControllerChange);
+
+    // 加载阅读进度
+    _loadReadingProgress().then((_) {
+      // 阅读进度加载完成后，更新当前章节索引
+      _updateCurrentChapterIndex();
+    });
+  }
+  
+  // 控制器变化监听
+  void _onControllerChange() {
+    if (mounted) {
+      setState(() {
+        // 重新构建UI以更新章节信息
       });
+      
+      // 当内容加载完成后再解析章节，避免同时进行大量IO操作
+      if (widget.controller.fullContentLoaded && !widget.controller.chaptersLoaded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          widget.controller.parseChapters();
+        });
+      }
     }
   }
 
@@ -147,6 +148,8 @@ class _ReaderPageState extends State<ReaderPage> {
     // 保存阅读进度
     _saveReadingProgress();
     _pageController?.dispose();
+    // 移除监听器
+    widget.controller.removeListener(_onControllerChange);
     super.dispose();
   }
 
@@ -161,12 +164,60 @@ class _ReaderPageState extends State<ReaderPage> {
         0,
         0.0,
         pageIndex: _currentPageIndex,
-        durChapterIndex: 0, // 暂时设为0，后续可以根据实际章节逻辑调整
+        durChapterIndex: _currentChapterIndex, // 使用计算的当前章节索引
         durChapterPos: 0, // 暂时设为0，后续可以根据实际位置逻辑调整
         durChapterPage: _currentPageIndex, // 保存当前页码作为durChapterPage
       );
     } catch (e) {
       debugPrint('保存阅读进度失败: $e');
+    }
+  }
+  
+  /// 加载阅读进度
+  Future<void> _loadReadingProgress() async {
+    final novelProvider = Provider.of<NovelProvider>(context, listen: false);
+    try {
+      final novel = novelProvider.getNovelById(widget.novelId);
+      // 优先使用Legado风格的坐标系统
+      if (novel.durChapterPage != null && novel.durChapterPage! > 0) {
+        if (mounted) {
+          setState(() {
+            _currentPageIndex = novel.durChapterPage!;
+            // 如果有保存的章节索引，直接使用
+            if (novel.durChapterIndex != null) {
+              _currentChapterIndex = novel.durChapterIndex!;
+            }
+            _pageController?.jumpToPage(_currentPageIndex);
+          });
+        }
+      } else if (novel.currentPageIndex != null && novel.currentPageIndex! > 0) {
+        if (mounted) {
+          setState(() {
+            _currentPageIndex = novel.currentPageIndex!;
+            _pageController?.jumpToPage(_currentPageIndex);
+          });
+        }
+      }
+    } catch (_) {}
+  }
+  
+  /// 更新当前章节索引
+  Future<void> _updateCurrentChapterIndex() async {
+    if (widget.controller.chaptersLoaded && widget.controller.chapters != null && widget.controller.chapters!.isNotEmpty) {
+      try {
+        // 使用异步方法获取当前页码对应的起始行号
+        final startLineIndex = await widget.controller.getStartLineIndexByPageIndexAsync(_currentPageIndex);
+        // 根据行号获取对应的章节索引
+        final chapterIndex = widget.controller.getChapterIndexByLineIndex(startLineIndex);
+        
+        if (mounted && chapterIndex != _currentChapterIndex) {
+          setState(() {
+            _currentChapterIndex = chapterIndex;
+          });
+        }
+      } catch (e) {
+        debugPrint('更新当前章节索引失败: $e');
+      }
     }
   }
 
@@ -177,12 +228,19 @@ class _ReaderPageState extends State<ReaderPage> {
         currentTime.difference(_lastTapTime!).inMilliseconds < 300) {
       // 双击操作 - 可以添加双击功能，如收藏等
     } else {
-      // 单击操作 - 切换UI弹窗显示
+      // 单击操作
       setState(() {
-        _showUIOverlay = !_showUIOverlay;
+        if (_showUIOverlay) {
+          // 如果UI弹窗已经显示，点击空白处隐藏弹窗
+          _showUIOverlay = false;
+        } else if (_showCatalogOverlay) {
+          // 如果显示目录弹窗，先关闭目录弹窗
+          _showCatalogOverlay = false;
+        } else {
+          // 否则切换UI弹窗显示
+          _showUIOverlay = true;
+        }
       });
-      final provider = Provider.of<NovelProvider>(context, listen: false);
-      _backgroundColor = _showUIOverlay ? provider.themeColor : Colors.transparent;
     }
     _lastTapTime = currentTime;
   }
@@ -193,11 +251,17 @@ Widget build(BuildContext context) {
 
   final currentContext = context;
 
+// 只监听 themeColor，其他属性改变时不触发本 Widget 重建
+  final themeColor = context.select<NovelProvider, Color>((p) => p.themeColor);
+
+  // 这里的逻辑会自动响应 themeColor 或 setState 触发的布尔值变化
+  final _backgroundColor = (_showUIOverlay || _showCatalogOverlay) 
+      ? themeColor 
+      : Colors.transparent; // 如果显示UI或目录弹窗，背景色为主题色；否则透明
+      
   return StatusBarStyle(
     // ✅ 阅读器典型：沉浸 + 白底黑字
     backgroundColor: _backgroundColor,
-    // 如果你以后有夜间模式，这里只改颜色即可
-    // backgroundColor: isDarkMode ? Colors.black : Colors.white,
 
     child: PopScope(
       canPop: false,
@@ -231,14 +295,15 @@ Widget build(BuildContext context) {
                     _loadFirstScreenContent(c.biggest, style);
 
                     widget.controller.load(c.biggest, style).then((_) async {
-                      if (!mounted) return;
+          if (!mounted) return;
 
-                      _preLoadTargetPage();
-                      setState(() => _ready = true);
+          _preLoadTargetPage();
+          setState(() => _ready = true);
 
-                      await Future.delayed(const Duration(milliseconds: 50));
-                      _restoreReadingPosition();
-                    });
+          await Future.delayed(const Duration(milliseconds: 50));
+          _restoreReadingPosition();
+          await _updateCurrentChapterIndex();
+        });
 
                     return Container(
                       color: Colors.white,
@@ -273,6 +338,9 @@ Widget build(BuildContext context) {
                         setState(() {
                           _currentPageIndex = index;
                         });
+                        
+                        // 异步更新当前章节索引
+                        _updateCurrentChapterIndex();
                       }
                     },
                     itemBuilder: (_, i) {
@@ -299,11 +367,54 @@ Widget build(BuildContext context) {
                       Navigator.pop(currentContext);
                     }
                   },
-                  onCatalog: () {},
+                  // 点击了目录
+                  onCatalog: () {
+                    setState(() {
+                      _showUIOverlay = false;
+                      _showCatalogOverlay = true;
+                    });
+                  },
+                  // 点击了朗读
                   onReadAloud: () {},
+                  // 点击了界面
                   onInterface: () {},
+                  // 点击了设置
                   onSettings: () {},
                 ),
+              
+              /// 目录弹窗
+              if (_showCatalogOverlay)
+                ReaderCatalogOverlay(
+                  novelTitle: widget.controller.novelTitle ?? '阅读器',
+                  currentChapterIndex: _currentChapterIndex,
+                  totalChapters: widget.controller.chapters?.length ?? 0,
+                  chapterTitles: widget.controller.chapters?.map((c) => c.title).toList() ?? [],
+                  onBack: () {
+                    setState(() {
+                      _showCatalogOverlay = false;
+                    });
+                  },
+                  onChapterSelect: (chapterIndex) async {
+                    // 根据章节索引计算页码并跳转
+                    if (widget.controller.chapters != null && chapterIndex >= 0 && chapterIndex < widget.controller.chapters!.length) {
+                      // 获取目标章节对应的页码
+                      final targetPageIndex = await widget.controller.getPageIndexByChapterIndex(chapterIndex);
+                       
+                      // 更新当前页码、章节索引并跳转
+                      setState(() {
+                        _showCatalogOverlay = false;
+                        _currentPageIndex = targetPageIndex;
+                        // 直接设置当前章节索引为用户点击的章节索引，避免后续更新错误
+                        _currentChapterIndex = chapterIndex;
+                      });
+                       
+                      // 跳转到目标页码
+                      if (_pageController != null && mounted) {
+                        _pageController!.jumpToPage(targetPageIndex);
+                      }
+                    }
+                  },
+                )
             ],
           ),
         ),
