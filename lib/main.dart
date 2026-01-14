@@ -1,7 +1,9 @@
+import 'package:app/pages/reader/reader_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/novel_provider.dart';
 import 'pages/tabs_screen.dart';
+import 'pages/reader/reader_page.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'utils/smoothSlideTransitionBuilder.dart';
@@ -48,7 +50,7 @@ class _MyAppState extends State<MyApp> {
           title: '简单小说',
           theme: ThemeData(
             pageTransitionsTheme: PageTransitionsTheme(
-                builders: {
+              builders: {
                 TargetPlatform.android: SmoothSlideTransitionBuilder(),
                 TargetPlatform.iOS: SmoothSlideTransitionBuilder(),
               },
@@ -91,7 +93,34 @@ class _MyAppState extends State<MyApp> {
           themeMode: ThemeMode.light,
           home: const TabsScreen(),
           routes: {
-          
+            '/reader': (context) {
+              final args =
+                  ModalRoute.of(context)!.settings.arguments
+                      as Map<String, dynamic>;
+              final novelId = args['novelId'] as String;
+              final novelTitle = args['novelTitle'] as String?;
+
+              return FutureBuilder<String>(
+                future: _getNovelFilePath(novelId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (snapshot.hasError || snapshot.data == null) {
+                    return const Center(child: Text('无法加载小说'));
+                  }
+
+                  final file = File(snapshot.data!);
+                  final controller = ReaderController(
+                    file,
+                    novelTitle: novelTitle,
+                  );
+
+                  return ReaderPage(controller: controller, novelId: novelId);
+                },
+              );
+            },
           },
         );
       },
