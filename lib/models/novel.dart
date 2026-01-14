@@ -2,11 +2,8 @@
 class Novel {
   final String id;
   final String title;
-  final String author;
   final String coverUrl;
-  final String description;
   final int chapterCount;
-  final String category;
   final int lastUpdateTime;
   final String lastChapterTitle;
   final int? currentChapter;
@@ -21,11 +18,8 @@ class Novel {
   Novel({
     required this.id,
     required this.title,
-    required this.author,
     required this.coverUrl,
-    required this.description,
     required this.chapterCount,
-    required this.category,
     required this.lastUpdateTime,
     required this.lastChapterTitle,
     this.currentChapter,
@@ -41,11 +35,8 @@ class Novel {
     return Novel(
       id: json['id'] as String,
       title: json['title'] as String,
-      author: json['author'] as String,
       coverUrl: json['coverUrl'] as String,
-      description: json['description'] as String,
       chapterCount: json['chapterCount'] as int,
-      category: json['category'] as String,
       lastUpdateTime: json['lastUpdateTime'] as int,
       lastChapterTitle: json['lastChapterTitle'] as String,
       currentChapter: json['currentChapter'] as int?,
@@ -62,11 +53,8 @@ class Novel {
     return {
       'id': id,
       'title': title,
-      'author': author,
       'coverUrl': coverUrl,
-      'description': description,
       'chapterCount': chapterCount,
-      'category': category,
       'lastUpdateTime': lastUpdateTime,
       'lastChapterTitle': lastChapterTitle,
       'currentChapter': currentChapter,
@@ -82,11 +70,8 @@ class Novel {
   Novel copyWith({
     String? id,
     String? title,
-    String? author,
     String? coverUrl,
-    String? description,
     int? chapterCount,
-    String? category,
     int? lastUpdateTime,
     String? lastChapterTitle,
     int? currentChapter,
@@ -99,11 +84,8 @@ class Novel {
     return Novel(
       id: id ?? this.id,
       title: title ?? this.title,
-      author: author ?? this.author,
       coverUrl: coverUrl ?? this.coverUrl,
-      description: description ?? this.description,
       chapterCount: chapterCount ?? this.chapterCount,
-      category: category ?? this.category,
       lastUpdateTime: lastUpdateTime ?? this.lastUpdateTime,
       lastChapterTitle: lastChapterTitle ?? this.lastChapterTitle,
       currentChapter: currentChapter ?? this.currentChapter,

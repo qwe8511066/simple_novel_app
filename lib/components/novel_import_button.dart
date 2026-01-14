@@ -28,10 +28,10 @@ class NovelImportButton extends StatelessWidget {
       },
       child: const Text('导入小说', style: TextStyle(color: Colors.white)),
       style: ButtonStyle(
-        backgroundColor: MaterialStateProperty.all(Theme.of(context).primaryColor),
-        padding: MaterialStateProperty.all(
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        ),
+        // backgroundColor: MaterialStateProperty.all(Theme.of(context).primaryColor),
+        // padding: MaterialStateProperty.all(
+        //   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        // ),
         shape: MaterialStateProperty.all(
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
@@ -107,14 +107,11 @@ class NovelImportButton extends StatelessWidget {
         // 创建Novel对象并添加到书架
         final novel = Novel(
           id: fileName,
-          title: fileName.replaceAll('.txt', ''),
-          author: '本地导入',
-          coverUrl: '',
-          description: '本地导入的小说',
-          chapterCount: 1,
-          category: '本地',
-          lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
-          lastChapterTitle: '第一章',
+              title: fileName.replaceAll('.txt', ''),
+              coverUrl: '',
+              chapterCount: 1,
+              lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+              lastChapterTitle: '第一章',
         );
 
         novelProvider.addToFavorites(novel);

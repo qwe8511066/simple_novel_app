@@ -11,12 +11,11 @@ class NovelProvider with ChangeNotifier {
   List<Novel> _favoriteNovels = [];
   final List<Novel> _recentNovels = [];
   String? _novelDirPath;
-  bool _isDarkMode = false;
+
   double _fontSize = 14;
   Color _themeColor = Colors.blue; // 默认主题色
   Color _bookshelfBackgroundColor = Colors.white; // 默认书架背景色
   String? _bookshelfBackgroundImage; // 书架背景图片路径
-
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
 
@@ -30,10 +29,7 @@ class NovelProvider with ChangeNotifier {
 
   /// 获取最近阅读的小说列表
   List<Novel> get recentNovels => _recentNovels;
-  
-  /// 获取当前是否为夜间模式
-  bool get isDarkMode => _isDarkMode;
-  
+
   /// 获取当前字体大小
   double get fontSize => _fontSize;
   
@@ -57,9 +53,7 @@ class NovelProvider with ChangeNotifier {
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 加载夜间模式
-    _isDarkMode = prefs.getBool('isDarkMode') ?? false;
-    
+
     // 加载字体大小
     _fontSize = prefs.getDouble('fontSize') ?? 14;
     
@@ -118,9 +112,7 @@ class NovelProvider with ChangeNotifier {
   Future<void> _saveConfig() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 保存夜间模式
-    await prefs.setBool('isDarkMode', _isDarkMode);
-    
+
     // 保存字体大小
     await prefs.setDouble('fontSize', _fontSize);
     
@@ -167,7 +159,7 @@ class NovelProvider with ChangeNotifier {
     // 1. 同步文件状态：如果文件被删除了，从收藏中移除
     final currentIds = files.map((f) => path.basename(f.path)).toSet();
     final initialCount = _favoriteNovels.length;
-    _favoriteNovels.removeWhere((n) => n.category == '本地' && !currentIds.contains(n.id));
+    _favoriteNovels.removeWhere((n) => currentIds.contains(n.id) == false);
     if (_favoriteNovels.length != initialCount) changed = true;
 
     // 2. 发现新文件：如果有新文件，添加到列表
@@ -180,11 +172,8 @@ class NovelProvider with ChangeNotifier {
           final novel = Novel(
             id: id,
             title: title,
-            author: '本地导入',
             coverUrl: '',
-            description: '本地导入的小说',
             chapterCount: 1,
-            category: '本地',
             lastUpdateTime: file.lastModifiedSync().millisecondsSinceEpoch,
             lastChapterTitle: '第一章',
           );
@@ -223,20 +212,8 @@ class NovelProvider with ChangeNotifier {
     notifyListeners();
   }
   
-  /// 切换夜间模式
-  Future<void> toggleDarkMode() async {
-    _isDarkMode = !_isDarkMode;
-    await _saveConfig();
-    notifyListeners();
-  }
-  
-  /// 设置夜间模式
-  Future<void> setDarkMode(bool isDark) async {
-    _isDarkMode = isDark;
-    await _saveConfig();
-    notifyListeners();
-  }
-  
+
+
   /// 设置字体大小
   Future<void> setFontSize(double size) async {
     _fontSize = size;
@@ -288,74 +265,14 @@ class NovelProvider with ChangeNotifier {
       return b.lastUpdateTime.compareTo(a.lastUpdateTime);
     });
   }
-
-  /// 更新阅读进度
-  Future<void> updateReadingProgress(String novelId, int chapter, double scrollProgress, {int? pageIndex, int? durChapterIndex, int? durChapterPos, int? durChapterPage}) async {
-    final index = _favoriteNovels.indexWhere((n) => n.id == novelId);
+  
+  /// 更新小说信息
+  Future<void> updateNovel(Novel novel) async {
+    final index = _favoriteNovels.indexWhere((n) => n.id == novel.id);
     if (index != -1) {
-      final novel = _favoriteNovels[index];
-      _favoriteNovels[index] = novel.copyWith(
-        currentChapter: chapter,
-        scrollProgress: scrollProgress,
-        currentPageIndex: pageIndex,
-        durChapterIndex: durChapterIndex,
-        durChapterPos: durChapterPos,
-        durChapterPage: durChapterPage,
-        lastUpdateTime: DateTime.now().millisecondsSinceEpoch, // 更新阅读时间
-      );
-      _sortNovels();
-      await _saveNovelsMetadata(); // 持久化进度
+      _favoriteNovels[index] = novel;
+      await _saveNovelsMetadata();
       notifyListeners();
     }
-
-    // 更新最近阅读
-    final recentIndex = _recentNovels.indexWhere((n) => n.id == novelId);
-    if (recentIndex != -1) {
-      _recentNovels.removeAt(recentIndex);
-    }
-    final novel = _favoriteNovels.firstWhere((n) => n.id == novelId, orElse: () {
-      return Novel(
-        id: '',
-        title: '',
-        author: '',
-        coverUrl: '',
-        description: '',
-        chapterCount: 0,
-        category: '',
-        lastUpdateTime: 0,
-        lastChapterTitle: '',
-      );
-    });
-    if (novel.id.isNotEmpty) {
-      _recentNovels.insert(0, novel);
-      if (_recentNovels.length > 20) {
-        _recentNovels.removeLast();
-      }
-      notifyListeners();
-    }
-  }
-
-  /// 搜索小说
-  List<Novel> searchNovels(String query, List<Novel> allNovels) {
-    if (query.isEmpty) return [];
-    final lowercaseQuery = query.toLowerCase();
-    return allNovels
-        .where((novel) =>
-            novel.title.toLowerCase().contains(lowercaseQuery) ||
-            novel.author.toLowerCase().contains(lowercaseQuery))
-        .toList();
-  }
-
-  /// 根据分类获取小说
-  List<Novel> getNovelsByCategory(String category, List<Novel> allNovels) {
-    if (category == '全部') return allNovels;
-    return allNovels.where((novel) => novel.category == category).toList();
-  }
-
-  /// 获取所有分类
-  List<String> getAllCategories(List<Novel> allNovels) {
-    final categories = allNovels.map((novel) => novel.category).toSet().toList();
-    categories.insert(0, '全部');
-    return categories;
   }
 }

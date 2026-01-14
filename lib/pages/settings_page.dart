@@ -62,18 +62,7 @@ class SettingsPage extends StatelessWidget {
                     subtitle: '点击设置书架背景',
                     onTap: () => _showBookshelfBackgroundDialog(context),
                   ),
-                  _buildSettingItem(
-                     context: context,
-                     icon: Icons.brightness_6,
-                     title: '夜间模式',
-                     subtitle: '当前: ${provider.isDarkMode ? '开启' : '关闭'}',
-                     trailing: Switch(
-                       value: provider.isDarkMode,
-                       onChanged: (value) async {
-                         await provider.toggleDarkMode();
-                       },
-                     ),
-                   ),
+
                 ],
               );
             },

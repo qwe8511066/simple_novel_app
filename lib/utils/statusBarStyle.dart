@@ -2,45 +2,29 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 页面级状态栏样式（稳定版）
-///
-/// 用法：
-/// StatusBarStyle(
-///   backgroundColor: Colors.black,
-///   child: Scaffold(...)
-/// )
-class StatusBarStyle extends StatelessWidget {
-  final Widget child;
-
+/// ===============================
+/// 1️⃣ 纯数据 & 计算层（核心）
+/// ===============================
+class StatusBarStyleData {
   final Color backgroundColor;
-  final bool autoBrightness;
   final Brightness? iconBrightness;
 
   final Color? navigationBarColor;
   final Brightness? navigationBarIconBrightness;
-  final bool edgeToEdge;
 
-  const StatusBarStyle({
-    super.key,
-    required this.child,
+  const StatusBarStyleData({
     this.backgroundColor = Colors.transparent,
-    this.autoBrightness = true,
     this.iconBrightness,
     this.navigationBarColor,
     this.navigationBarIconBrightness,
-    this.edgeToEdge = true,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final double statusBarHeight = MediaQuery.of(
-      context,
-    ).padding.top; // ✅ 唯一正确来源
-
+  /// ✅ 对外暴露的 SystemUiOverlayStyle
+  SystemUiOverlayStyle get overlayStyle {
     final Brightness statusIconBrightness =
         iconBrightness ?? _calcBrightness(backgroundColor);
 
-    final style = SystemUiOverlayStyle(
+    return SystemUiOverlayStyle(
       statusBarColor: backgroundColor,
       statusBarIconBrightness: statusIconBrightness,
       statusBarBrightness: _invertBrightness(statusIconBrightness),
@@ -52,22 +36,14 @@ class StatusBarStyle extends StatelessWidget {
 
       systemNavigationBarDividerColor: Colors.transparent,
     );
-
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: style,
-      child: StatusBarScope(
-        statusBarHeight: statusBarHeight,
-        child: _EdgeToEdgeWrapper(enabled: edgeToEdge, child: child),
-      ),
-    );
   }
 
+  /// 透明 → 默认黑色图标（系统一致）
   static Brightness _calcBrightness(Color bg) {
-    if (bg.opacity == 0) {
-      // 透明状态栏：默认黑色图标（符合系统默认 + 主流 App）
-      return Brightness.dark;
-    }
-    return bg.computeLuminance() < 0.5 ? Brightness.light : Brightness.dark;
+    if (bg.opacity == 0) return Brightness.dark;
+    return bg.computeLuminance() < 0.5
+        ? Brightness.light
+        : Brightness.dark;
   }
 
   static Brightness _invertBrightness(Brightness b) {
@@ -75,11 +51,56 @@ class StatusBarStyle extends StatelessWidget {
   }
 }
 
+/// ===============================
+/// 2️⃣ 页面级 Widget（稳定应用层）
+/// ===============================
+class StatusBarStyle extends StatelessWidget {
+  final Widget child;
+  final StatusBarStyleData data;
+  final bool edgeToEdge;
+
+  const StatusBarStyle({
+    super.key,
+    required this.child,
+    required this.data,
+    this.edgeToEdge = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double statusBarHeight =
+        MediaQuery.of(context).padding.top;
+
+    final SystemUiOverlayStyle style = data.overlayStyle;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: style,
+      child: StatusBarScope(
+        statusBarHeight: statusBarHeight,
+        style: style,
+        textColor: data.overlayStyle.statusBarIconBrightness == Brightness.dark
+            ? Colors.black
+            : Colors.white,
+        child: _EdgeToEdgeWrapper(
+          enabled: edgeToEdge,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// ===============================
+/// 3️⃣ Android Edge-to-Edge 控制
+/// ===============================
 class _EdgeToEdgeWrapper extends StatefulWidget {
   final Widget child;
   final bool enabled;
 
-  const _EdgeToEdgeWrapper({required this.child, required this.enabled});
+  const _EdgeToEdgeWrapper({
+    required this.child,
+    required this.enabled,
+  });
 
   @override
   State<_EdgeToEdgeWrapper> createState() => _EdgeToEdgeWrapperState();
@@ -90,9 +111,18 @@ class _EdgeToEdgeWrapperState extends State<_EdgeToEdgeWrapper> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    if (Platform.isAndroid && widget.enabled) {
-      // 只在页面进入时设置一次
+    if (!Platform.isAndroid) return;
+
+    if (widget.enabled) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } else {
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: [
+          SystemUiOverlay.top,
+          SystemUiOverlay.bottom,
+        ],
+      );
     }
   }
 
@@ -102,24 +132,31 @@ class _EdgeToEdgeWrapperState extends State<_EdgeToEdgeWrapper> {
   }
 }
 
+/// ===============================
+/// 4️⃣ 对外暴露（高度 + style）
+/// ===============================
 class StatusBarScope extends InheritedWidget {
   final double statusBarHeight;
-
+  final SystemUiOverlayStyle style;
+  final Color textColor;
   const StatusBarScope({
     super.key,
     required this.statusBarHeight,
+    required this.style,
+    required this.textColor,
     required super.child,
   });
 
   static StatusBarScope of(BuildContext context) {
-    final StatusBarScope? result = context
-        .dependOnInheritedWidgetOfExactType<StatusBarScope>();
-    assert(result != null, 'No StatusBarScope found in context');
+    final result =
+        context.dependOnInheritedWidgetOfExactType<StatusBarScope>();
+    assert(result != null, 'No StatusBarScope found');
     return result!;
   }
 
   @override
   bool updateShouldNotify(StatusBarScope oldWidget) {
-    return statusBarHeight != oldWidget.statusBarHeight;
+    return statusBarHeight != oldWidget.statusBarHeight ||
+        style != oldWidget.style;
   }
 }

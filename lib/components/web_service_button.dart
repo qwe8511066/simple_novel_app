@@ -215,16 +215,13 @@ class _WebServiceButtonState extends State<WebServiceButton> {
 
         // 上传成功后，创建Novel对象并添加到书架
         final novel = Novel(
-          id: filename,
-          title: filename.replaceAll('.txt', ''),
-          author: '本地导入',
-          coverUrl: '',
-          description: '本地导入的小说',
-          chapterCount: 1, // 简单处理，将整个文件视为一章
-          category: '本地',
-          lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
-          lastChapterTitle: '第一章',
-        );
+        id: filename,
+        title: filename.replaceAll('.txt', ''),
+        coverUrl: '',
+        chapterCount: 1, // 简单处理，将整个文件视为一章
+        lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+        lastChapterTitle: '第一章',
+      );
 
         // 获取NovelProvider实例并添加小说到书架
         if (mounted) {
@@ -445,11 +442,8 @@ class _WebServiceButtonState extends State<WebServiceButton> {
           final novel = Novel(
             id: fileName,
             title: fileName.replaceAll('.txt', ''),
-            author: '本地导入',
             coverUrl: '',
-            description: '本地导入的小说',
-            chapterCount: 1,
-            category: '本地',
+                  chapterCount: 1,
             lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
             lastChapterTitle: '第一章',
           );
