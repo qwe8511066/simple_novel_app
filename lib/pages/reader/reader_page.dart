@@ -249,8 +249,9 @@ class _ReaderPageState extends State<ReaderPage> {
                       .jumpToByteOffset(byteOffset, layoutSize, textStyle)
                       .then((targetPage) {
                     if (!mounted) return;
-                    _pageController?.dispose();
-                    _pageController = PageController(initialPage: targetPage);
+                    if (_pageController != null && _pageController!.hasClients) {
+                      _pageController!.jumpToPage(targetPage);
+                    }
                     setState(() {
                       _currentPageIndex = targetPage;
                     });
