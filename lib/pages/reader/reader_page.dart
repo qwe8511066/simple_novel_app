@@ -138,31 +138,52 @@ class _ReaderPageState extends State<ReaderPage> {
                         controller: pageController,
                         itemCount: widget.controller.pages.length,
                         onPageChanged: (index) {
+                          Future<void> handleIndex(int effectiveIndex) async {
+                            widget.controller.ensureMoreIfNeeded(effectiveIndex, c.biggest, style);
+
+                            final ref = widget.controller.pageRefAt(effectiveIndex);
+                            try {
+                              final novel = _novelProvider.getNovelById(widget.novelId);
+
+                              final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+                              final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
+                              _novelProvider.updateNovelProgress(
+                                novel.copyWith(
+                                  currentPageIndex: effectiveIndex,
+                                  currentChapter: chapterIndex,
+                                  lastChapterTitle: chapterTitle.isNotEmpty
+                                      ? chapterTitle
+                                      : novel.lastChapterTitle,
+                                  durChapterIndex: ref.segmentIndex,
+                                  durChapterPage: ref.pageInSegment,
+                                  durChapterPos: ref.pageStartOffset,
+                                ),
+                              );
+                            } catch (_) {}
+                          }
+
                           setState(() {
                             _currentPageIndex = index;
                           });
 
-                          widget.controller.ensureMoreIfNeeded(index, c.biggest, style);
+                          widget.controller
+                              .ensurePreviousIfNeeded(index, c.biggest, style)
+                              .then((added) {
+                            if (!mounted) return;
 
-                          final ref = widget.controller.pageRefAt(index);
-                          try {
-                            final novel = _novelProvider.getNovelById(widget.novelId);
+                            final effectiveIndex = index + added;
+                            if (added > 0) {
+                              final pc = _pageController;
+                              if (pc != null && pc.hasClients) {
+                                pc.jumpToPage(effectiveIndex);
+                              }
+                              setState(() {
+                                _currentPageIndex = effectiveIndex;
+                              });
+                            }
 
-                            final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
-                            final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
-                            _novelProvider.updateNovelProgress(
-                              novel.copyWith(
-                                currentPageIndex: index,
-                                currentChapter: chapterIndex,
-                                lastChapterTitle: chapterTitle.isNotEmpty
-                                    ? chapterTitle
-                                    : novel.lastChapterTitle,
-                                durChapterIndex: ref.segmentIndex,
-                                durChapterPage: ref.pageInSegment,
-                                durChapterPos: ref.pageStartOffset,
-                              ),
-                            );
-                          } catch (_) {}
+                            handleIndex(effectiveIndex);
+                          });
                         },
                         itemBuilder: (_, i) => Padding(
                           padding: const EdgeInsets.all(16),

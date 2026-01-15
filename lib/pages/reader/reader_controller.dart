@@ -32,6 +32,7 @@ class ReaderController extends ChangeNotifier {
   final List<PageRef> _pageRefs = [];
 
   int _loadedMaxSegmentIndex = -1;
+  int _loadedMinSegmentIndex = 0;
   bool _loadingMore = false;
   int initialGlobalPage = 0;
 
@@ -114,6 +115,7 @@ class ReaderController extends ChangeNotifier {
     pages = [];
     _pageRefs.clear();
     _loadedMaxSegmentIndex = -1;
+    _loadedMinSegmentIndex = 0;
     initialGlobalPage = 0;
 
     _index = await TxtSegmentIndexManager.loadOrBuild(
@@ -128,6 +130,7 @@ class ReaderController extends ChangeNotifier {
 
     await _appendSegmentPages(safeSegment, size, style);
     _loadedMaxSegmentIndex = safeSegment;
+    _loadedMinSegmentIndex = safeSegment;
 
     if (pages.isEmpty) {
       initialGlobalPage = 0;
@@ -137,6 +140,32 @@ class ReaderController extends ChangeNotifier {
     notifyListeners();
 
     unawaited(ensureMoreIfNeeded(initialGlobalPage, size, style));
+  }
+
+  Future<int> ensurePreviousIfNeeded(
+    int currentGlobalPage,
+    Size size,
+    TextStyle style,
+  ) async {
+    final idx = _index;
+    if (idx == null) return 0;
+    if (_loadingMore) return 0;
+    if (_loadedMinSegmentIndex <= 0) return 0;
+
+    if (currentGlobalPage > 3) return 0;
+
+    _loadingMore = true;
+    try {
+      final prevSeg = _loadedMinSegmentIndex - 1;
+      final added = await _prependSegmentPages(prevSeg, size, style);
+      if (added > 0) {
+        _loadedMinSegmentIndex = prevSeg;
+        notifyListeners();
+      }
+      return added;
+    } finally {
+      _loadingMore = false;
+    }
   }
 
   Future<void> ensureMoreIfNeeded(
@@ -219,6 +248,71 @@ class ReaderController extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  Future<int> _prependSegmentPages(
+    int segmentIndex,
+    Size size,
+    TextStyle style,
+  ) async {
+    final idx = _index;
+    if (idx == null) return 0;
+
+    final start = idx.segmentStart(segmentIndex);
+    final end = idx.segmentEnd(segmentIndex);
+    final bytes = await _readBytesRange(utf8File, start, end);
+
+    final lines = <String>[];
+    final lineStartOffsets = <int>[];
+    var currentLineStart = 0;
+    final buf = <int>[];
+
+    for (var i = 0; i < bytes.length; i++) {
+      final b = bytes[i];
+      if (b == 0x0A) {
+        final text = utf8.decode(buf, allowMalformed: true).replaceAll('\r', '');
+        lines.add(text);
+        lineStartOffsets.add(currentLineStart);
+        buf.clear();
+        currentLineStart = i + 1;
+      } else {
+        buf.add(b);
+      }
+    }
+    if (buf.isNotEmpty) {
+      final text = utf8.decode(buf, allowMalformed: true).replaceAll('\r', '');
+      lines.add(text);
+      lineStartOffsets.add(currentLineStart);
+    }
+
+    final engine = PaginationEngine(lines, style, size);
+    final segPages = engine.paginateWithLineIndex();
+    if (segPages.isEmpty) return 0;
+
+    final newPages = <List<String>>[];
+    final newRefs = <PageRef>[];
+
+    for (var i = 0; i < segPages.length; i++) {
+      final p = segPages[i];
+      newPages.add(p.lines);
+      final lineOffsetInSeg =
+          (p.startLineIndex >= 0 && p.startLineIndex < lineStartOffsets.length)
+              ? lineStartOffsets[p.startLineIndex]
+              : 0;
+      final pageStartOffset = start + lineOffsetInSeg;
+      newRefs.add(
+        PageRef(
+          segmentIndex: segmentIndex,
+          pageInSegment: i,
+          segmentStartOffset: start,
+          pageStartOffset: pageStartOffset,
+        ),
+      );
+    }
+
+    pages.insertAll(0, newPages);
+    _pageRefs.insertAll(0, newRefs);
+    return newPages.length;
   }
 
   int _segmentIndexAtOffset(int byteOffset) {
