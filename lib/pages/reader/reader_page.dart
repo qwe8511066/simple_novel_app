@@ -34,12 +34,18 @@ class _ReaderPageState extends State<ReaderPage> {
     final ref = widget.controller.pageRefAt(_currentPageIndex);
     try {
       final novel = _novelProvider.getNovelById(widget.novelId);
+
+      final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+      final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
+
       _novelProvider.updateNovelProgress(
         novel.copyWith(
           currentPageIndex: _currentPageIndex,
+          currentChapter: chapterIndex,
+          lastChapterTitle: chapterTitle.isNotEmpty ? chapterTitle : novel.lastChapterTitle,
           durChapterIndex: ref.segmentIndex,
           durChapterPage: ref.pageInSegment,
-          durChapterPos: ref.segmentStartOffset,
+          durChapterPos: ref.pageStartOffset,
         ),
       );
     } catch (_) {}
@@ -108,14 +114,20 @@ class _ReaderPageState extends State<ReaderPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                return Stack(
-                children: [
-                  AnimatedBuilder(
-                    animation: widget.controller,
-                    builder: (context, _) {
-                      final pageController = _pageController ??
-                          PageController(initialPage: novelStartPage(widget.controller, _currentPageIndex));
-                      return PageView.builder(
+                return AnimatedBuilder(
+                  animation: widget.controller,
+                  builder: (context, _) {
+                    final pageController = _pageController ??
+                        PageController(initialPage: novelStartPage(widget.controller, _currentPageIndex));
+
+                    return GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        setState(() {
+                          _showUIOverlay = !_showUIOverlay;
+                        });
+                      },
+                      child: PageView.builder(
                         controller: pageController,
                         itemCount: widget.controller.pages.length,
                         onPageChanged: (index) {
@@ -126,16 +138,21 @@ class _ReaderPageState extends State<ReaderPage> {
                           widget.controller.ensureMoreIfNeeded(index, c.biggest, style);
 
                           final ref = widget.controller.pageRefAt(index);
-                          final novelProvider = 
-                              Provider.of<NovelProvider>(context, listen: false);
                           try {
-                            final novel = novelProvider.getNovelById(widget.novelId);
-                            novelProvider.updateNovelProgress(
+                            final novel = _novelProvider.getNovelById(widget.novelId);
+
+                            final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+                            final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
+                            _novelProvider.updateNovelProgress(
                               novel.copyWith(
                                 currentPageIndex: index,
+                                currentChapter: chapterIndex,
+                                lastChapterTitle: chapterTitle.isNotEmpty
+                                    ? chapterTitle
+                                    : novel.lastChapterTitle,
                                 durChapterIndex: ref.segmentIndex,
                                 durChapterPage: ref.pageInSegment,
-                                durChapterPos: ref.segmentStartOffset,
+                                durChapterPos: ref.pageStartOffset,
                               ),
                             );
                           } catch (_) {}
@@ -149,24 +166,10 @@ class _ReaderPageState extends State<ReaderPage> {
                             ),
                           ),
                         ),
-                      );
-                    },
-                  ),
-                  // 点击空白处切换UI弹窗显示状态
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _showUIOverlay = !_showUIOverlay;
-                      });
-                    },
-                    child: Container(
-                      color: Colors.transparent,
-                      width: double.infinity,
-                      height: double.infinity,
-                    ),
-                  ),
-                ],
-              );
+                      ),
+                    );
+                  },
+                );
               },
             ),
             // UI弹窗组件

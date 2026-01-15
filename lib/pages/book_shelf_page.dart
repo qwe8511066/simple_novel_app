@@ -222,8 +222,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   Widget _buildBookItem(BuildContext context, Novel novel) {
-    final currentChapter = novel.currentChapter ?? 0;
     final chapterCount = novel.chapterCount;
+    final rawCurrent = novel.currentChapter ?? 0;
+    final currentChapter = chapterCount > 0 ? rawCurrent.clamp(0, chapterCount - 1) : rawCurrent;
     final progress = chapterCount > 0 ? (currentChapter / chapterCount).toDouble() : 0.0;
 
     return Container(
@@ -340,22 +341,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
                                     ),
                                   ],
                                 ),
-                                Text(
-                                  '${(progress * 100).toStringAsFixed(0)}%',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).primaryColor,
-                                  ),
-                                ),
                               ],
-                            ),
-                            const SizedBox(height: 6),
-                            SizedBox(
-                              height: 6,
-                              child: LinearProgressIndicator(
-                                value: progress,
-                                backgroundColor: Colors.grey[200],
-                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
-                              ),
                             ),
                           ],
                         ),
