@@ -275,4 +275,14 @@ class NovelProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// 仅更新阅读进度并持久化，不触发全局刷新
+  Future<void> updateNovelProgress(Novel novel) async {
+    final index = _favoriteNovels.indexWhere((n) => n.id == novel.id);
+    if (index != -1) {
+      _favoriteNovels[index] = novel;
+      await _saveNovelsMetadata();
+      notifyListeners();
+    }
+  }
 }

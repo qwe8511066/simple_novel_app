@@ -44,8 +44,12 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NovelProvider>(
-      builder: (context, provider, child) {
+    return Selector<NovelProvider, ({double fontSize, Color themeColor})>(
+      selector: (context, provider) => (
+        fontSize: provider.fontSize,
+        themeColor: provider.themeColor,
+      ),
+      builder: (context, theme, child) {
         return MaterialApp(
           title: '简单小说',
           theme: ThemeData(
@@ -57,46 +61,45 @@ class _MyAppState extends State<MyApp> {
             ),
             useMaterial3: true,
             brightness: Brightness.light,
-            primaryColor: provider.themeColor,
+            primaryColor: theme.themeColor,
             textTheme: ThemeData.light().textTheme.copyWith(
               bodyLarge: TextStyle(
-                fontSize: provider.fontSize.toDouble(),
+                fontSize: theme.fontSize.toDouble(),
                 color: Colors.black87,
               ),
               bodyMedium: TextStyle(
-                fontSize: (provider.fontSize - 2).toDouble(),
+                fontSize: (theme.fontSize - 2).toDouble(),
                 color: Colors.black87,
               ),
               bodySmall: TextStyle(
-                fontSize: (provider.fontSize - 4).toDouble(),
+                fontSize: (theme.fontSize - 4).toDouble(),
                 color: Colors.black54,
               ),
               titleLarge: TextStyle(
-                fontSize: (provider.fontSize + 8).toDouble(),
-                color: provider.themeColor,
+                fontSize: (theme.fontSize + 8).toDouble(),
+                color: theme.themeColor,
               ),
               titleMedium: TextStyle(
-                fontSize: (provider.fontSize + 4).toDouble(),
-                color: provider.themeColor,
+                fontSize: (theme.fontSize + 4).toDouble(),
+                color: theme.themeColor,
               ),
               titleSmall: TextStyle(
-                fontSize: (provider.fontSize).toDouble(),
-                color: provider.themeColor,
+                fontSize: (theme.fontSize).toDouble(),
+                color: theme.themeColor,
               ),
               headlineSmall: TextStyle(
-                fontSize: (provider.fontSize + 6).toDouble(),
-                color: provider.themeColor,
+                fontSize: (theme.fontSize + 6).toDouble(),
+                color: theme.themeColor,
               ),
             ),
-            iconTheme: IconThemeData(color: provider.themeColor),
+            iconTheme: IconThemeData(color: theme.themeColor),
           ),
           themeMode: ThemeMode.light,
           home: const TabsScreen(),
           routes: {
             '/reader': (context) {
               final args =
-                  ModalRoute.of(context)!.settings.arguments
-                      as Map<String, dynamic>;
+                  ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
               final novelId = args['novelId'] as String;
               final novelTitle = args['novelTitle'] as String?;
 
