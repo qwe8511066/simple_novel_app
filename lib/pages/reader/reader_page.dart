@@ -21,7 +21,7 @@ class ReaderPage extends StatefulWidget {
 class _ReaderPageState extends State<ReaderPage> {
   bool _ready = false;
   int _currentPageIndex = 0;
-  late PageController _pageController;
+  PageController? _pageController;
   int _startSegmentIndex = 0;
   int _startPageInSegment = 0;
   late final NovelProvider _novelProvider;
@@ -45,8 +45,6 @@ class _ReaderPageState extends State<ReaderPage> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
-
     _novelProvider = Provider.of<NovelProvider>(context, listen: false);
 
     // 加载保存的阅读进度
@@ -69,7 +67,7 @@ class _ReaderPageState extends State<ReaderPage> {
   @override
   void dispose() {
     _persistProgress();
-    _pageController.dispose();
+    _pageController?.dispose();
     super.dispose();
   }
 
@@ -92,16 +90,13 @@ class _ReaderPageState extends State<ReaderPage> {
                   )
                   .then((_) {
                 if (mounted) {
-                  setState(() => _ready = true);
-                  // 加载完成后跳转到保存的页码
                   final jumpTo = novelStartPage(widget.controller, _currentPageIndex);
-                  if (jumpTo < widget.controller.pages.length) {
-                    Future.delayed(const Duration(milliseconds: 100), () {
-                      if (mounted) {
-                        _pageController.jumpToPage(jumpTo);
-                      }
-                    });
-                  }
+                  _pageController?.dispose();
+                  _pageController = PageController(initialPage: jumpTo);
+                  setState(() {
+                    _currentPageIndex = jumpTo;
+                    _ready = true;
+                  });
                 }
               });
               return const Center(child: CircularProgressIndicator());
@@ -110,8 +105,10 @@ class _ReaderPageState extends State<ReaderPage> {
             return AnimatedBuilder(
               animation: widget.controller,
               builder: (context, _) {
+                final pageController = _pageController ??
+                    PageController(initialPage: novelStartPage(widget.controller, _currentPageIndex));
                 return PageView.builder(
-                  controller: _pageController,
+                  controller: pageController,
                   itemCount: widget.controller.pages.length,
                   onPageChanged: (index) {
                     setState(() {
