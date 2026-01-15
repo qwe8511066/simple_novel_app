@@ -136,7 +136,6 @@ class _ReaderCatalogOverlayState extends State<ReaderCatalogOverlay> {
   Widget build(BuildContext context) {
     final novelProvider = Provider.of<NovelProvider>(context);
     final themeColor = novelProvider.themeColor;
-    final double statusBarHeight = StatusBarScope.of(context).statusBarHeight;
 
     return Material(
       color: Colors.transparent,
@@ -153,7 +152,7 @@ class _ReaderCatalogOverlayState extends State<ReaderCatalogOverlay> {
           ),
           // 目录弹窗
           Positioned(
-            top: statusBarHeight,
+            top: 0,
             left: 0,
             right: 0,
             bottom: 0,
@@ -222,37 +221,46 @@ class _ReaderCatalogOverlayState extends State<ReaderCatalogOverlay> {
                   ),
                   // 章节列表
                   Expanded(
-                    child: ListView.builder(
+                    child: RawScrollbar(
                       controller: _scrollController,
-                      padding: EdgeInsets.zero,
-                      itemCount: _filteredChapterTitles.length,
-                      // 设置固定的列表项高度，确保滚动位置计算准确
-                      itemExtent: 52.0, // 固定列表项高度为52px
-                      itemBuilder: (context, listIndex) {
-                        final chapterData = _filteredChapterTitles[listIndex];
-                        final chapterIndex = chapterData['index'] as int;
-                        final chapterTitle = chapterData['title'] as String;
-                        final isCurrentChapter = chapterIndex == widget.currentChapterIndex;
-                        return ListTile(
-                          title: Text(
-                            chapterTitle,
-                            style: TextStyle(
-                              color: isCurrentChapter ? themeColor : Colors.black87,
-                              fontWeight: isCurrentChapter ? FontWeight.bold : FontWeight.normal,
-                              fontSize: 16,
+                      thickness: 18.0, // 增加滚动条厚度，提高可点击性
+                      radius: const Radius.circular(2.0), // 滚动条圆角
+                      thumbColor: Colors.grey, // 滚动条颜色
+                      thumbVisibility: true, // 始终显示滚动条
+                      trackVisibility: false, // 不显示滚动条轨道
+                      interactive: true, // 允许拖拽滚动条
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.zero,
+                        itemCount: _filteredChapterTitles.length,
+                        // 设置固定的列表项高度，确保滚动位置计算准确
+                        itemExtent: 52.0, // 固定列表项高度为52px
+                        itemBuilder: (context, listIndex) {
+                          final chapterData = _filteredChapterTitles[listIndex];
+                          final chapterIndex = chapterData['index'] as int;
+                          final chapterTitle = chapterData['title'] as String;
+                          final isCurrentChapter = chapterIndex == widget.currentChapterIndex;
+                          return ListTile(
+                            title: Text(
+                              chapterTitle,
+                              style: TextStyle(
+                                color: isCurrentChapter ? themeColor : Colors.black87,
+                                fontWeight: isCurrentChapter ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 16,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          leading: isCurrentChapter
-                              ? Icon(Icons.check, color: themeColor)
-                              : null,
-                          onTap: () {
-                            widget.onChapterSelect(chapterIndex);
-                          },
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          tileColor: isCurrentChapter ? Colors.grey[100] : null,
-                        );
-                      },
+                            leading: isCurrentChapter
+                                ? Icon(Icons.check, color: themeColor)
+                                : null,
+                            onTap: () {
+                              widget.onChapterSelect(chapterIndex);
+                            },
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            tileColor: isCurrentChapter ? Colors.grey[100] : null,
+                          );
+                        },
+                      ),
                     ),
                   ),
                     // 底部章节信息
