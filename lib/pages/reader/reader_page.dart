@@ -4,6 +4,7 @@ import 'reader_controller.dart';
 import '../../providers/novel_provider.dart';
 import '../../utils/statusBarStyle.dart';
 import './reader_settings/reader_ui_overlay.dart';
+import './reader_settings/reader_catalog_overlay.dart';
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
   final String novelId;
@@ -26,8 +27,12 @@ class _ReaderPageState extends State<ReaderPage> {
   int _startPageInSegment = 0;
   
   bool _showUIOverlay = false; // 是否显示UI弹窗，默认显示以方便用户操作
+  bool _showCatalogOverlay = false; // 是否显示目录弹窗
 
   late final NovelProvider _novelProvider;
+
+  Size? _lastLayoutSize;
+  TextStyle? _lastTextStyle;
 
   void _persistProgress() {
     if (!_ready) return;
@@ -92,6 +97,8 @@ class _ReaderPageState extends State<ReaderPage> {
           children: [
             LayoutBuilder(
               builder: (ctx, c) {
+                _lastLayoutSize = c.biggest;
+                _lastTextStyle = style;
                 if (!_ready) {
                   widget.controller
                       .loadInitial(
@@ -175,7 +182,7 @@ class _ReaderPageState extends State<ReaderPage> {
             // UI弹窗组件
             if (_showUIOverlay && _ready)
               ReaderUIOverlay(
-                novelTitle: novel.title ?? '未知标题',
+                novelTitle: novel.title,
                 currentPage: _currentPageIndex + 1,
                 totalPages: widget.controller.pages.length,
                 onBack: () {
@@ -184,10 +191,10 @@ class _ReaderPageState extends State<ReaderPage> {
                 },
                 onCatalog: () {
                   _showUIOverlay = false;
+                  _showCatalogOverlay = true;
                   setState(() {});
                   // 目录按钮点击事件
                   print('目录按钮点击');
-                  // TODO: 实现目录功能
                 },
                 onReadAloud: () {
                   _showUIOverlay = false;
@@ -214,6 +221,41 @@ class _ReaderPageState extends State<ReaderPage> {
                   debugPrint('关闭按钮点击');
                   // 关闭弹窗
                   _showUIOverlay = false;
+                  setState(() {});
+                },
+              ),
+            // 目录弹窗组件
+            if (_showCatalogOverlay && _ready)
+              ReaderCatalogOverlay(
+                novelTitle: novel.title,
+                currentChapterIndex: widget.controller.chapterIndexAtOffset(widget.controller.pageRefAt(_currentPageIndex).pageStartOffset),
+                totalChapters: widget.controller.totalChapters,
+                chapterTitles: widget.controller.chapterTitles,
+                onBack: () {
+                  _showCatalogOverlay = false;
+                  setState(() {});
+                },
+                onChapterSelect: (index) {
+                  _showCatalogOverlay = false;
+                  final layoutSize = _lastLayoutSize;
+                  final textStyle = _lastTextStyle;
+                  if (layoutSize == null || textStyle == null) {
+                    setState(() {});
+                    return;
+                  }
+
+                  final byteOffset = widget.controller.chapterStartOffsetAt(index);
+                  widget.controller
+                      .jumpToByteOffset(byteOffset, layoutSize, textStyle)
+                      .then((targetPage) {
+                    if (!mounted) return;
+                    _pageController?.dispose();
+                    _pageController = PageController(initialPage: targetPage);
+                    setState(() {
+                      _currentPageIndex = targetPage;
+                    });
+                    _persistProgress();
+                  });
                   setState(() {});
                 },
               ),

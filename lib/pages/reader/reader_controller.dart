@@ -24,7 +24,7 @@ class PageRef {
 class ReaderController extends ChangeNotifier {
   final File utf8File;
   final String? novelTitle;
-  
+
   List<List<String>> pages = [];
 
   TxtSegmentIndex? _index;
@@ -68,6 +68,42 @@ class ReaderController extends ChangeNotifier {
     return idx.chapterTitleAt(chapterIndex);
   }
 
+  int chapterStartOffsetAt(int chapterIndex) {
+    final idx = _chapterIndex;
+    if (idx == null || idx.chapterStartOffsets.isEmpty) return 0;
+    final i = chapterIndex.clamp(0, idx.chapterStartOffsets.length - 1);
+    return idx.chapterStartOffsets[i];
+  }
+
+  Future<int> jumpToByteOffset(
+    int byteOffset,
+    Size size,
+    TextStyle style,
+  ) async {
+    await ensureChapterIndexLoaded();
+
+    final segIndex = _segmentIndexAtOffset(byteOffset);
+    await loadInitial(
+      size,
+      style,
+      startSegmentIndex: segIndex,
+      startPageInSegment: 0,
+    );
+
+    var targetPage = 0;
+    for (var i = 0; i < _pageRefs.length; i++) {
+      if (_pageRefs[i].pageStartOffset <= byteOffset) {
+        targetPage = i;
+      } else {
+        break;
+      }
+    }
+
+    initialGlobalPage = targetPage.clamp(0, pages.isEmpty ? 0 : pages.length - 1);
+    notifyListeners();
+    return initialGlobalPage;
+  }
+
   Future<void> loadInitial(
     Size size,
     TextStyle style, {
@@ -103,7 +139,11 @@ class ReaderController extends ChangeNotifier {
     unawaited(ensureMoreIfNeeded(initialGlobalPage, size, style));
   }
 
-  Future<void> ensureMoreIfNeeded(int currentGlobalPage, Size size, TextStyle style) async {
+  Future<void> ensureMoreIfNeeded(
+    int currentGlobalPage,
+    Size size,
+    TextStyle style,
+  ) async {
     final idx = _index;
     if (idx == null) return;
     if (_loadingMore) return;
@@ -123,7 +163,11 @@ class ReaderController extends ChangeNotifier {
     }
   }
 
-  Future<void> _appendSegmentPages(int segmentIndex, Size size, TextStyle style) async {
+  Future<void> _appendSegmentPages(
+    int segmentIndex,
+    Size size,
+    TextStyle style,
+  ) async {
     final idx = _index;
     if (idx == null) return;
 
@@ -139,7 +183,9 @@ class ReaderController extends ChangeNotifier {
     for (var i = 0; i < bytes.length; i++) {
       final b = bytes[i];
       if (b == 0x0A) {
-        final text = utf8.decode(buf, allowMalformed: true).replaceAll('\r', '');
+        final text = utf8
+            .decode(buf, allowMalformed: true)
+            .replaceAll('\r', '');
         lines.add(text);
         lineStartOffsets.add(currentLineStart);
         buf.clear();
@@ -159,17 +205,38 @@ class ReaderController extends ChangeNotifier {
     for (var i = 0; i < segPages.length; i++) {
       final p = segPages[i];
       pages.add(p.lines);
-      final lineOffsetInSeg = (p.startLineIndex >= 0 && p.startLineIndex < lineStartOffsets.length)
+      final lineOffsetInSeg =
+          (p.startLineIndex >= 0 && p.startLineIndex < lineStartOffsets.length)
           ? lineStartOffsets[p.startLineIndex]
           : 0;
       final pageStartOffset = start + lineOffsetInSeg;
-      _pageRefs.add(PageRef(
-        segmentIndex: segmentIndex,
-        pageInSegment: i,
-        segmentStartOffset: start,
-        pageStartOffset: pageStartOffset,
-      ));
+      _pageRefs.add(
+        PageRef(
+          segmentIndex: segmentIndex,
+          pageInSegment: i,
+          segmentStartOffset: start,
+          pageStartOffset: pageStartOffset,
+        ),
+      );
     }
+  }
+
+  int _segmentIndexAtOffset(int byteOffset) {
+    final idx = _index;
+    if (idx == null || idx.segmentStartOffsets.isEmpty) return 0;
+
+    var lo = 0;
+    var hi = idx.segmentStartOffsets.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (idx.segmentStartOffsets[mid] <= byteOffset) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    final seg = (lo - 1).clamp(0, idx.segmentStartOffsets.length - 1);
+    return seg;
   }
 
   static Future<String> _readUtf8Range(File file, int start, int end) async {
@@ -184,7 +251,11 @@ class ReaderController extends ChangeNotifier {
     }
   }
 
-  static Future<Uint8List> _readBytesRange(File file, int start, int end) async {
+  static Future<Uint8List> _readBytesRange(
+    File file,
+    int start,
+    int end,
+  ) async {
     final raf = await file.open(mode: FileMode.read);
     try {
       await raf.setPosition(start);
@@ -194,5 +265,17 @@ class ReaderController extends ChangeNotifier {
     } finally {
       await raf.close();
     }
+  }
+
+  int get totalChapters {
+    final idx = _chapterIndex;
+    if (idx == null) return 0;
+    return idx.chapterCount;
+  }
+
+  List<String> get chapterTitles {
+    final idx = _chapterIndex;
+    if (idx == null) return [];
+    return idx.chapterTitles;
   }
 }
