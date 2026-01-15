@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:app/utils/chapter_utils.dart';
 import 'package:charset_converter/charset_converter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -103,11 +104,11 @@ class NovelImportButton extends StatelessWidget {
         // 保存到小说目录
         final targetFile = File('$novelDirPath/$fileName');
         await targetFile.writeAsString(content);
-
+        final title = await ChapterUtils.normalizeTitle(fileName.replaceAll('.txt', ''));
         // 创建Novel对象并添加到书架
         final novel = Novel(
           id: fileName,
-              title: fileName.replaceAll('.txt', ''),
+              title: title,
               coverUrl: '',
               chapterCount: 1,
               lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
