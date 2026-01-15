@@ -12,10 +12,23 @@ class NovelProvider with ChangeNotifier {
   final List<Novel> _recentNovels = [];
   String? _novelDirPath;
 
-  double _fontSize = 14;
+  double _fontSize = 21;
   Color _themeColor = Colors.blue; // 默认主题色
   Color _bookshelfBackgroundColor = Colors.white; // 默认书架背景色
   String? _bookshelfBackgroundImage; // 书架背景图片路径
+  
+  // 阅读界面设置
+  Color _readerBackgroundColor = Colors.white; // 阅读界面背景色
+  String? _readerBackgroundImage = 'assets/images/reader_backgrounds/10dec9361b40818e066b942ff9adb352.jpg'; // 默认阅读界面背景图片
+  double _readerPaddingTop = 20; // 阅读界面顶部间距
+  double _readerPaddingBottom = 20; // 阅读界面底部间距
+  double _readerPaddingLeft = 20; // 阅读界面左侧间距
+  double _readerPaddingRight = 20; // 阅读界面右侧间距
+  double _letterSpacing = 0; // 字距
+  double _lineSpacing = 1.5; // 行距
+  double _paragraphSpacing = 16; // 段距
+  String _fontFamily = 'FZZiZhuAYuanTiB'; // 默认字体
+  String? _customFontPath; // 第三方字体文件路径
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
 
@@ -42,6 +55,19 @@ class NovelProvider with ChangeNotifier {
   /// 获取书架背景图片路径
   String? get bookshelfBackgroundImage => _bookshelfBackgroundImage;
   
+  /// 阅读界面设置 getters
+  Color get readerBackgroundColor => _readerBackgroundColor;
+  String? get readerBackgroundImage => _readerBackgroundImage;
+  double get readerPaddingTop => _readerPaddingTop;
+  double get readerPaddingBottom => _readerPaddingBottom;
+  double get readerPaddingLeft => _readerPaddingLeft;
+  double get readerPaddingRight => _readerPaddingRight;
+  double get letterSpacing => _letterSpacing;
+  double get lineSpacing => _lineSpacing;
+  double get paragraphSpacing => _paragraphSpacing;
+  String get fontFamily => _fontFamily;
+  String? get customFontPath => _customFontPath;
+  
   /// 初始化 - 加载本地小说和用户配置
   Future<void> init() async {
     await _ensureNovelDirectory();
@@ -55,7 +81,7 @@ class NovelProvider with ChangeNotifier {
     
 
     // 加载字体大小
-    _fontSize = prefs.getDouble('fontSize') ?? 14;
+    _fontSize = prefs.getDouble('fontSize') ?? 21;
     
     // 加载主题色
     final themeColorHex = prefs.getString('themeColor');
@@ -86,6 +112,30 @@ class NovelProvider with ChangeNotifier {
     
     // 加载书架背景图片路径
     _bookshelfBackgroundImage = prefs.getString('bookshelfBackgroundImage');
+    
+    // 加载阅读界面背景色
+    final readerColorHex = prefs.getString('readerBackgroundColor');
+    if (readerColorHex != null) {
+      _readerBackgroundColor = Color(int.parse(readerColorHex, radix: 16));
+    } else {
+      _readerBackgroundColor = Colors.white;
+    }
+    
+    // 加载阅读界面背景图片路径
+    _readerBackgroundImage = prefs.getString('readerBackgroundImage');
+    
+    // 加载阅读界面间距
+    _readerPaddingTop = prefs.getDouble('readerPaddingTop') ?? 20;
+    _readerPaddingBottom = prefs.getDouble('readerPaddingBottom') ?? 20;
+    _readerPaddingLeft = prefs.getDouble('readerPaddingLeft') ?? 20;
+    _readerPaddingRight = prefs.getDouble('readerPaddingRight') ?? 20;
+    
+    // 加载字体设置
+    _letterSpacing = prefs.getDouble('letterSpacing') ?? 0;
+    _lineSpacing = prefs.getDouble('lineSpacing') ?? 1.5;
+    _paragraphSpacing = prefs.getDouble('paragraphSpacing') ?? 16;
+    _fontFamily = prefs.getString('fontFamily') ?? 'sans-serif';
+    _customFontPath = prefs.getString('customFontPath');
 
     // 加载小说收藏元数据(包含进度)
     final novelsJson = prefs.getString('favoriteNovelsMetadata');
@@ -127,6 +177,33 @@ class NovelProvider with ChangeNotifier {
       await prefs.setString('bookshelfBackgroundImage', _bookshelfBackgroundImage!);
     } else {
       await prefs.remove('bookshelfBackgroundImage');
+    }
+    
+    // 保存阅读界面背景色
+    await prefs.setString('readerBackgroundColor', _readerBackgroundColor.toARGB32().toRadixString(16));
+    
+    // 保存阅读界面背景图片路径
+    if (_readerBackgroundImage != null) {
+      await prefs.setString('readerBackgroundImage', _readerBackgroundImage!);
+    } else {
+      await prefs.remove('readerBackgroundImage');
+    }
+    
+    // 保存阅读界面间距
+    await prefs.setDouble('readerPaddingTop', _readerPaddingTop);
+    await prefs.setDouble('readerPaddingBottom', _readerPaddingBottom);
+    await prefs.setDouble('readerPaddingLeft', _readerPaddingLeft);
+    await prefs.setDouble('readerPaddingRight', _readerPaddingRight);
+    
+    // 保存字体设置
+    await prefs.setDouble('letterSpacing', _letterSpacing);
+    await prefs.setDouble('lineSpacing', _lineSpacing);
+    await prefs.setDouble('paragraphSpacing', _paragraphSpacing);
+    await prefs.setString('fontFamily', _fontFamily);
+    if (_customFontPath != null) {
+      await prefs.setString('customFontPath', _customFontPath!);
+    } else {
+      await prefs.remove('customFontPath');
     }
   }
   
@@ -242,6 +319,67 @@ class NovelProvider with ChangeNotifier {
     notifyListeners();
     await _saveConfig();
   }
+  
+  /// 设置阅读界面背景色
+  Future<void> setReaderBackgroundColor(Color color) async {
+    _readerBackgroundColor = color;
+    _readerBackgroundImage = null; // 清除背景图片
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置阅读界面背景图片
+  Future<void> setReaderBackgroundImage(String? imagePath) async {
+    _readerBackgroundImage = imagePath;
+    notifyListeners();
+    await _saveConfig();
+  }
+  
+  /// 设置阅读界面间距
+  Future<void> setReaderPadding({double? top, double? bottom, double? left, double? right}) async {
+    if (top != null) _readerPaddingTop = top;
+    if (bottom != null) _readerPaddingBottom = bottom;
+    if (left != null) _readerPaddingLeft = left;
+    if (right != null) _readerPaddingRight = right;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置字距
+  Future<void> setLetterSpacing(double spacing) async {
+    _letterSpacing = spacing;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置行距
+  Future<void> setLineSpacing(double spacing) async {
+    _lineSpacing = spacing;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置段距
+  Future<void> setParagraphSpacing(double spacing) async {
+    _paragraphSpacing = spacing;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置字体
+  Future<void> setFontFamily(String fontFamily) async {
+    // 检查是否是文件路径（第三方字体）
+    if (fontFamily.endsWith('.ttf') || fontFamily.endsWith('.otf')) {
+      _customFontPath = fontFamily;
+      // 使用一个固定的字体族名，因为我们会通过FontLoader加载这个字体
+      _fontFamily = 'CustomFont';
+    } else {
+      _fontFamily = fontFamily;
+      _customFontPath = null;
+    }
+    await _saveConfig();
+    notifyListeners();
+  }
 
   /// 切换收藏状态
   void toggleFavorite(Novel novel) {
@@ -284,5 +422,35 @@ class NovelProvider with ChangeNotifier {
       await _saveNovelsMetadata();
       notifyListeners();
     }
+  }
+  
+  /// 重置阅读背景设置
+  Future<void> resetBackgroundSettings() async {
+    _readerBackgroundColor = Colors.white;
+    _readerBackgroundImage = 'assets/images/reader_backgrounds/10dec9361b40818e066b942ff9adb352.jpg';
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 重置阅读间距设置
+  Future<void> resetPaddingSettings() async {
+    _readerPaddingTop = 20;
+    _readerPaddingBottom = 20;
+    _readerPaddingLeft = 20;
+    _readerPaddingRight = 20;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 重置阅读字体设置
+  Future<void> resetFontSettings() async {
+    _fontSize = 21;
+    _fontFamily = 'FZZiZhuAYuanTiB';
+    _letterSpacing = 0;
+    _lineSpacing = 1.5;
+    _paragraphSpacing = 16;
+    _customFontPath = null;
+    await _saveConfig();
+    notifyListeners();
   }
 }

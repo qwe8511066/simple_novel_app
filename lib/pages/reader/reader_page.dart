@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'reader_controller.dart';
@@ -5,6 +6,8 @@ import '../../providers/novel_provider.dart';
 import '../../utils/statusBarStyle.dart';
 import './reader_settings/reader_ui_overlay.dart';
 import './reader_settings/reader_catalog_overlay.dart';
+import './reader_settings/reader_settings_overlay.dart';
+import 'package:flutter/services.dart';
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
   final String novelId;
@@ -28,6 +31,7 @@ class _ReaderPageState extends State<ReaderPage> {
   
   bool _showUIOverlay = false; // 是否显示UI弹窗，默认显示以方便用户操作
   bool _showCatalogOverlay = false; // 是否显示目录弹窗
+  bool _showSettingsOverlay = false; // 是否显示设置弹窗
 
   late final NovelProvider _novelProvider;
 
@@ -121,80 +125,157 @@ class _ReaderPageState extends State<ReaderPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                return AnimatedBuilder(
-                  animation: widget.controller,
-                  builder: (context, _) {
-                    final pageController = _pageController ??
-                        PageController(initialPage: novelStartPage(widget.controller, _currentPageIndex));
-
-                    return GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        setState(() {
-                          _showUIOverlay = !_showUIOverlay;
+                return Consumer<NovelProvider>(
+                  builder: (context, novelProvider, child) {
+                    // 根据设置创建文本样式
+                    TextStyle textStyle;
+                    if (novelProvider.customFontPath != null && novelProvider.customFontPath!.isNotEmpty) {
+                      try {
+                        // 处理自定义字体文件
+                        final fontLoader = FontLoader('CustomFont');
+                        fontLoader.addFont(File(novelProvider.customFontPath!).readAsBytes().then((bytes) => ByteData.view(bytes.buffer)));
+                        fontLoader.load().catchError((e) {
+                          debugPrint('Failed to load custom font: $e');
                         });
-                      },
-                      child: PageView.builder(
-                        controller: pageController,
-                        itemCount: widget.controller.pages.length,
-                        onPageChanged: (index) {
-                          Future<void> handleIndex(int effectiveIndex) async {
-                            widget.controller.ensureMoreIfNeeded(effectiveIndex, c.biggest, style);
+                        textStyle = TextStyle(
+                          fontSize: novelProvider.fontSize,
+                          fontFamily: 'CustomFont',
+                          letterSpacing: novelProvider.letterSpacing,
+                          height: novelProvider.lineSpacing,
+                          color: Colors.black,
+                        );
+                      } catch (e) {
+                        debugPrint('Error loading custom font file: $e');
+                        // Fallback to system font if custom font fails to load
+                        textStyle = TextStyle(
+                          fontSize: novelProvider.fontSize,
+                          fontFamily: novelProvider.fontFamily,
+                          letterSpacing: novelProvider.letterSpacing,
+                          height: novelProvider.lineSpacing,
+                          color: Colors.black,
+                        );
+                      }
+                    } else {
+                      // 使用系统字体
+                      textStyle = TextStyle(
+                        fontSize: novelProvider.fontSize,
+                        fontFamily: novelProvider.fontFamily,
+                        letterSpacing: novelProvider.letterSpacing,
+                        height: novelProvider.lineSpacing,
+                        color: Colors.black,
+                      );
+                    }
+                    
+                    return AnimatedBuilder(
+                      animation: widget.controller,
+                      builder: (context, _) {
+                        final pageController = _pageController ??
+                            PageController(initialPage: novelStartPage(widget.controller, _currentPageIndex));
 
-                            final ref = widget.controller.pageRefAt(effectiveIndex);
-                            try {
-                              final novel = _novelProvider.getNovelById(widget.novelId);
+                        return GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () {
+                            setState(() {
+                              _showUIOverlay = !_showUIOverlay;
+                            });
+                          },
+                          child: Container(
+                            // 设置背景颜色或图片
+                            decoration: BoxDecoration(
+                              color: novelProvider.readerBackgroundImage == null
+                                  ? novelProvider.readerBackgroundColor
+                                  : null,
+                              image: novelProvider.readerBackgroundImage != null
+                                  ? DecorationImage(
+                                      image: novelProvider.readerBackgroundImage!.startsWith('assets/')
+                                          ? AssetImage(novelProvider.readerBackgroundImage!)
+                                          : FileImage(File(novelProvider.readerBackgroundImage!)),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                            ),
+                            child: PageView.builder(
+                              controller: pageController,
+                              itemCount: widget.controller.pages.length,
+                              onPageChanged: (index) {
+                                Future<void> handleIndex(int effectiveIndex) async {
+                                  widget.controller.ensureMoreIfNeeded(effectiveIndex, c.biggest, textStyle);
 
-                              final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
-                              final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
-                              _novelProvider.updateNovelProgress(
-                                novel.copyWith(
-                                  currentPageIndex: effectiveIndex,
-                                  currentChapter: chapterIndex,
-                                  lastChapterTitle: chapterTitle.isNotEmpty
-                                      ? chapterTitle
-                                      : novel.lastChapterTitle,
-                                  durChapterIndex: ref.segmentIndex,
-                                  durChapterPage: ref.pageInSegment,
-                                  durChapterPos: ref.pageStartOffset,
-                                ),
-                              );
-                            } catch (_) {}
-                          }
+                                  final ref = widget.controller.pageRefAt(effectiveIndex);
+                                  try {
+                                    final novel = _novelProvider.getNovelById(widget.novelId);
 
-                          setState(() {
-                            _currentPageIndex = index;
-                          });
+                                    final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+                                    final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
+                                    _novelProvider.updateNovelProgress(
+                                      novel.copyWith(
+                                        currentPageIndex: effectiveIndex,
+                                        currentChapter: chapterIndex,
+                                        lastChapterTitle: chapterTitle.isNotEmpty
+                                            ? chapterTitle
+                                            : novel.lastChapterTitle,
+                                        durChapterIndex: ref.segmentIndex,
+                                        durChapterPage: ref.pageInSegment,
+                                        durChapterPos: ref.pageStartOffset,
+                                      ),
+                                    );
+                                  } catch (_) {}
+                                }
 
-                          widget.controller
-                              .ensurePreviousIfNeeded(index, c.biggest, style)
-                              .then((added) {
-                            if (!mounted) return;
+                                setState(() {
+                                  _currentPageIndex = index;
+                                });
 
-                            final effectiveIndex = index + added;
-                            if (added > 0) {
-                              final pc = _pageController;
-                              if (pc != null && pc.hasClients) {
-                                pc.jumpToPage(effectiveIndex);
-                              }
-                              setState(() {
-                                _currentPageIndex = effectiveIndex;
-                              });
-                            }
+                                widget.controller
+                                    .ensurePreviousIfNeeded(index, c.biggest, textStyle)
+                                    .then((added) {
+                                  if (!mounted) return;
 
-                            handleIndex(effectiveIndex);
-                          });
-                        },
-                        itemBuilder: (_, i) => Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: SingleChildScrollView(
-                            child: Text(
-                              widget.controller.pages[i].join('\n'),
-                              style: style,
+                                  final effectiveIndex = index + added;
+                                  if (added > 0) {
+                                    final pc = _pageController;
+                                    if (pc != null && pc.hasClients) {
+                                      pc.jumpToPage(effectiveIndex);
+                                    }
+                                    setState(() {
+                                      _currentPageIndex = effectiveIndex;
+                                    });
+                                  }
+
+                                  handleIndex(effectiveIndex);
+                                });
+                              },
+                              itemBuilder: (_, i) {
+                                final pageText = widget.controller.pages[i].join('\n');
+                                final paragraphs = pageText.split('\n\n');
+                                
+                                return Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    novelProvider.readerPaddingLeft,
+                                    novelProvider.readerPaddingTop,
+                                    novelProvider.readerPaddingRight,
+                                    novelProvider.readerPaddingBottom,
+                                  ),
+                                  child: SingleChildScrollView(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: paragraphs.map((paragraph) {
+                                        return Padding(
+                                          padding: EdgeInsets.only(bottom: novelProvider.paragraphSpacing),
+                                          child: Text(
+                                            paragraph,
+                                            style: textStyle,
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     );
                   },
                 );
@@ -226,10 +307,10 @@ class _ReaderPageState extends State<ReaderPage> {
                 },
                 onInterface: () {
                   _showUIOverlay = false;
+                  _showSettingsOverlay = true;
                   setState(() {});
                   // 界面按钮点击事件
                   print('界面按钮点击');
-                  // TODO: 实现界面设置功能
                 },
                 onSettings: () {
                   _showUIOverlay = false;
@@ -278,6 +359,14 @@ class _ReaderPageState extends State<ReaderPage> {
                     });
                     _persistProgress();
                   });
+                  setState(() {});
+                },
+              ),
+            // 设置弹窗组件
+            if (_showSettingsOverlay && _ready)
+              ReaderSettingsOverlay(
+                onBack: () {
+                  _showSettingsOverlay = false;
                   setState(() {});
                 },
               ),
