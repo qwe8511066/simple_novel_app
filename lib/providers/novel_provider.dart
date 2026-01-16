@@ -12,7 +12,9 @@ class NovelProvider with ChangeNotifier {
   final List<Novel> _recentNovels = [];
   String? _novelDirPath;
 
-  double _fontSize = 21;
+  double _fontSize = 18;
+  double _readerFontSize = 21;
+  FontWeight _fontWeight = FontWeight.normal; // 默认字体粗细
   Color _themeColor = Colors.blue; // 默认主题色
   Color _bookshelfBackgroundColor = Colors.white; // 默认书架背景色
   String? _bookshelfBackgroundImage; // 书架背景图片路径
@@ -45,6 +47,12 @@ class NovelProvider with ChangeNotifier {
 
   /// 获取当前字体大小
   double get fontSize => _fontSize;
+  
+  /// 阅读界面字体大小
+  double get readerFontSize => _readerFontSize;
+  
+  /// 字体粗细
+  FontWeight get fontWeight => _fontWeight;
   
   /// 获取当前主题色
   Color get themeColor => _themeColor;
@@ -80,8 +88,10 @@ class NovelProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     
 
-    // 加载字体大小
-    _fontSize = prefs.getDouble('fontSize') ?? 21;
+    // 加载字体大小和粗细
+    _fontSize = prefs.getDouble('fontSize') ?? 18;
+    _readerFontSize = prefs.getDouble('readerFontSize') ?? 21;
+    _fontWeight = FontWeight.values[prefs.getInt('fontWeight') ?? FontWeight.normal.index];
     
     // 加载主题色
     final themeColorHex = prefs.getString('themeColor');
@@ -163,8 +173,10 @@ class NovelProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     
 
-    // 保存字体大小
+    // 保存字体大小和粗细
     await prefs.setDouble('fontSize', _fontSize);
+    await prefs.setDouble('readerFontSize', _readerFontSize);
+    await prefs.setInt('fontWeight', _fontWeight.index);
     
     // 保存主题色
     await prefs.setString('themeColor', _themeColor.toARGB32().toRadixString(16));
@@ -294,6 +306,20 @@ class NovelProvider with ChangeNotifier {
   /// 设置字体大小
   Future<void> setFontSize(double size) async {
     _fontSize = size;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置阅读界面字体大小
+  Future<void> setReaderFontSize(double size) async {
+    _readerFontSize = size;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置字体粗细
+  Future<void> setFontWeight(FontWeight weight) async {
+    _fontWeight = weight;
     await _saveConfig();
     notifyListeners();
   }
@@ -444,7 +470,9 @@ class NovelProvider with ChangeNotifier {
   
   /// 重置阅读字体设置
   Future<void> resetFontSettings() async {
-    _fontSize = 21;
+    _fontSize = 18;
+    _readerFontSize = 21;
+    _fontWeight = FontWeight.normal;
     _fontFamily = 'FZZiZhuAYuanTiB';
     _letterSpacing = 0;
     _lineSpacing = 1.5;

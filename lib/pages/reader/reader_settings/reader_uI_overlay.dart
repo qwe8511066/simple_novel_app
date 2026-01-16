@@ -11,7 +11,6 @@ class ReaderUIOverlay extends StatefulWidget {
   final VoidCallback onCatalog;
   final VoidCallback onReadAloud;
   final VoidCallback onInterface;
-  final VoidCallback onSettings;
   final VoidCallback onClose; // 添加关闭回调
   const ReaderUIOverlay({
     super.key,
@@ -22,7 +21,6 @@ class ReaderUIOverlay extends StatefulWidget {
     required this.onCatalog,
     required this.onReadAloud,
     required this.onInterface,
-    required this.onSettings,
     required this.onClose, // 添加关闭回调参数
   });
 
@@ -164,28 +162,6 @@ class _ReaderUIOverlayState extends State<ReaderUIOverlay> {
                               ),
                               const Text(
                                 '界面',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // 设置
-                        GestureDetector(
-                          onTap: widget.onSettings,
-                          child: Column(
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.settings,
-                                  color: Colors.white,
-                                ),
-                                onPressed: widget.onSettings,
-                              ),
-                              const Text(
-                                '设置',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,

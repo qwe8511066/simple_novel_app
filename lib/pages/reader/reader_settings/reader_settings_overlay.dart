@@ -24,11 +24,8 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
   
   // 可用字体列表
   final List<String> _availableFonts = [
-    'sans-serif',
-    'serif',
-    'monospace',
-    'cursive',
     'FZZiZhuAYuanTiB',
+    'serif',
   ];
 
   @override
@@ -51,10 +48,10 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
           ),
           // 设置弹窗
           Positioned(
-            top: 0,
             left: 0,
             right: 0,
             bottom: 0,
+            height: MediaQuery.of(context).size.height * 0.7,
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
@@ -65,26 +62,6 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
               ),
               child: Column(
                 children: [
-                  // 顶部标题栏
-                  Container(
-                    color: themeColor,
-                    child: AppBar(
-                      title: const Text(
-                        '阅读设置',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      backgroundColor: themeColor,
-                      elevation: 0,
-                      leading: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: widget.onBack,
-                      ),
-                    ),
-                  ),
                   
                   // 标签栏
                   Container(
@@ -199,7 +176,7 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
                       image: novelProvider.readerBackgroundImage!.startsWith('assets/')
                           ? AssetImage(novelProvider.readerBackgroundImage!)
                           : FileImage(File(novelProvider.readerBackgroundImage!)),
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                     )
                   : null,
               borderRadius: BorderRadius.circular(8),
@@ -319,26 +296,60 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
           Wrap(
             spacing: 12,
             runSpacing: 12,
-            children: _availableFonts.map((font) {
-              final isSelected = novelProvider.fontFamily == font;
-              return GestureDetector(
-                onTap: () => novelProvider.setFontFamily(font),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.blue : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    font,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black,
-                      fontFamily: font,
+            children: [
+              // 系统字体选项
+              ..._availableFonts.map((font) {
+                final isSelected = novelProvider.fontFamily == font;
+                return GestureDetector(
+                  onTap: () => novelProvider.setFontFamily(font),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.blue : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      font,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black,
+                        fontFamily: font,
+                      ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+              // 第三方字体选项（如果已选择）
+              if (novelProvider.customFontPath != null && 
+                  novelProvider.customFontPath!.isNotEmpty)
+                GestureDetector(
+                  onTap: () => {}, // 点击第三方字体不执行任何操作
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue, // 始终显示为选中状态
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          // 显示文件名作为字体名称
+                          novelProvider.customFontPath!.split(Platform.pathSeparator).last,
+                          style: const TextStyle(
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // 添加第三方字体图标或标识
+                        const Icon(
+                          Icons.download,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+            ],
           ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
@@ -347,10 +358,11 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
             label: const Text('选择第三方字体'),
           ),
           const SizedBox(height: 24),
+          _buildFontWeightSelector(novelProvider),
           _buildFontSlider(
             '字体大小',
-            novelProvider.fontSize,
-            (value) => novelProvider.setFontSize(value),
+            novelProvider.readerFontSize,
+            (value) => novelProvider.setReaderFontSize(value),
             12, 36,
             1,
           ),
@@ -392,6 +404,50 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
     );
   }
   
+  /// 构建字体粗细选择器
+  Widget _buildFontWeightSelector(NovelProvider novelProvider) {
+    // 定义可用的字体粗细选项
+    final List<Map<String, dynamic>> fontWeightOptions = [
+      {'label': '细体', 'weight': FontWeight.w300},
+      {'label': '常规', 'weight': FontWeight.normal},
+      {'label': '粗体', 'weight': FontWeight.bold},
+      {'label': '特粗', 'weight': FontWeight.w900},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('字体粗细'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: fontWeightOptions.map((option) {
+            final isSelected = novelProvider.fontWeight == option['weight'];
+            return GestureDetector(
+              onTap: () => novelProvider.setFontWeight(option['weight']),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.blue : Colors.grey[200],
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  option['label'],
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : Colors.black,
+                    fontWeight: option['weight'],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
   /// 构建字体设置滑块
   Widget _buildFontSlider(
     String title,
