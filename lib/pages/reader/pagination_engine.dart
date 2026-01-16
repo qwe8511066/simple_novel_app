@@ -27,9 +27,9 @@ class PaginationEngine {
         text: TextSpan(text: line, style: style),
         maxLines: null,
         textDirection: TextDirection.ltr,
-      )..layout(maxWidth: size.width - 32);
+      )..layout(maxWidth: size.width);
 
-      if (height + tp.height > size.height - 32) {
+      if (height + tp.height > size.height) {
         pages.add(page);
         page = [];
         height = 0;
@@ -55,9 +55,9 @@ class PaginationEngine {
         text: TextSpan(text: line, style: style),
         maxLines: null,
         textDirection: TextDirection.ltr,
-      )..layout(maxWidth: size.width - 32);
+      )..layout(maxWidth: size.width);
 
-      if (height + tp.height > size.height - 32) {
+      if (height + tp.height > size.height) {
         pages.add(PaginatedPage(startLineIndex: pageStartLineIndex, lines: page));
         page = [];
         pageStartLineIndex = lineIndex;

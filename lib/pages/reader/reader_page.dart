@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'reader_controller.dart';
@@ -36,7 +37,11 @@ class _ReaderPageState extends State<ReaderPage> {
   late final NovelProvider _novelProvider;
 
   Size? _lastLayoutSize;
+  Size? _lastContentSize;
   TextStyle? _lastTextStyle;
+
+  Timer? _rePaginateDebounce;
+  String? _lastTypographyKey;
 
   void _persistProgress() {
     if (!_ready) return;
@@ -84,9 +89,91 @@ class _ReaderPageState extends State<ReaderPage> {
 
   @override
   void dispose() {
+    _rePaginateDebounce?.cancel();
     _persistProgress();
     _pageController?.dispose();
     super.dispose();
+  }
+
+  TextStyle _buildReaderTextStyle(NovelProvider novelProvider) {
+    if (novelProvider.customFontPath != null &&
+        novelProvider.customFontPath!.isNotEmpty) {
+      return TextStyle(
+        fontSize: novelProvider.readerFontSize,
+        fontFamily: 'CustomFont',
+        fontWeight: novelProvider.fontWeight,
+        letterSpacing: novelProvider.letterSpacing,
+        height: novelProvider.lineSpacing,
+        color: Colors.black,
+      );
+    }
+    return TextStyle(
+      fontSize: novelProvider.readerFontSize,
+      fontFamily: novelProvider.fontFamily,
+      fontWeight: novelProvider.fontWeight,
+      letterSpacing: novelProvider.letterSpacing,
+      height: novelProvider.lineSpacing,
+      color: Colors.black,
+    );
+  }
+
+  Size _contentSize(BoxConstraints c, NovelProvider novelProvider) {
+    final w = (c.maxWidth - novelProvider.readerPaddingLeft - novelProvider.readerPaddingRight)
+        .clamp(0.0, c.maxWidth);
+    final h = (c.maxHeight - novelProvider.readerPaddingTop - novelProvider.readerPaddingBottom)
+        .clamp(0.0, c.maxHeight);
+    return Size(w, h);
+  }
+
+  String _typographyKey(NovelProvider novelProvider, Size contentSize) {
+    return [
+      novelProvider.readerFontSize,
+      novelProvider.fontWeight.index,
+      novelProvider.letterSpacing,
+      novelProvider.lineSpacing,
+      novelProvider.paragraphSpacing,
+      novelProvider.readerPaddingTop,
+      novelProvider.readerPaddingBottom,
+      novelProvider.readerPaddingLeft,
+      novelProvider.readerPaddingRight,
+      novelProvider.fontFamily,
+      novelProvider.customFontPath ?? '',
+      contentSize.width,
+      contentSize.height,
+    ].join('|');
+  }
+
+  void _scheduleRepaginate(NovelProvider novelProvider, BoxConstraints c, TextStyle textStyle) {
+    final contentSize = _contentSize(c, novelProvider);
+    final key = _typographyKey(novelProvider, contentSize);
+    if (_lastTypographyKey == null) {
+      _lastTypographyKey = key;
+      return;
+    }
+    if (_lastTypographyKey == key) return;
+    _lastTypographyKey = key;
+
+    if (!_ready) return;
+    _rePaginateDebounce?.cancel();
+    _rePaginateDebounce = Timer(const Duration(milliseconds: 200), () async {
+      if (!mounted) return;
+      final layoutSize = _lastLayoutSize;
+      final lastStyle = _lastTextStyle;
+      if (layoutSize == null || lastStyle == null) return;
+
+      final currentOffset = widget.controller.pageRefAt(_currentPageIndex).pageStartOffset;
+      final targetPage = await widget.controller.jumpToByteOffset(
+        currentOffset,
+        contentSize,
+        textStyle,
+      );
+      if (!mounted) return;
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: targetPage);
+      setState(() {
+        _currentPageIndex = targetPage;
+      });
+    });
   }
 
   // 记录上一次的自定义字体路径，避免重复加载
@@ -121,7 +208,6 @@ class _ReaderPageState extends State<ReaderPage> {
 
   @override
   Widget build(BuildContext context) {
-    final style = const TextStyle(fontSize: 18, height: 1.8);
     final novel = _novelProvider.getNovelById(widget.novelId);
 
     return StatusBarStyle(
@@ -153,13 +239,18 @@ class _ReaderPageState extends State<ReaderPage> {
             children: [
               LayoutBuilder(
                 builder: (ctx, c) {
+                  final novelProvider = Provider.of<NovelProvider>(context);
+                  final textStyle = _buildReaderTextStyle(novelProvider);
+                  final contentSize = _contentSize(c, novelProvider);
                   _lastLayoutSize = c.biggest;
-                  _lastTextStyle = style;
+                  _lastContentSize = contentSize;
+                  _lastTextStyle = textStyle;
+                  _scheduleRepaginate(novelProvider, c, textStyle);
                   if (!_ready) {
                     widget.controller
                         .loadInitial(
-                          c.biggest,
-                          style,
+                          contentSize,
+                          textStyle,
                           startSegmentIndex: _startSegmentIndex,
                           startPageInSegment: _startPageInSegment,
                         )
@@ -180,28 +271,7 @@ class _ReaderPageState extends State<ReaderPage> {
                   return Consumer<NovelProvider>(
                     builder: (context, novelProvider, child) {
                       // 根据设置创建文本样式，避免不必要的FontLoader重建
-                      TextStyle textStyle;
-                      if (novelProvider.customFontPath != null && novelProvider.customFontPath!.isNotEmpty) {
-                        // 使用已加载的自定义字体，仅更新样式属性
-                        textStyle = TextStyle(
-                          fontSize: novelProvider.readerFontSize,
-                          fontFamily: 'CustomFont',
-                          fontWeight: novelProvider.fontWeight,
-                          letterSpacing: novelProvider.letterSpacing,
-                          height: novelProvider.lineSpacing,
-                          color: Colors.black,
-                        );
-                      } else {
-                        // 使用系统字体
-                        textStyle = TextStyle(
-                          fontSize: novelProvider.readerFontSize,
-                          fontFamily: novelProvider.fontFamily,
-                          fontWeight: novelProvider.fontWeight,
-                          letterSpacing: novelProvider.letterSpacing,
-                          height: novelProvider.lineSpacing,
-                          color: Colors.black,
-                        );
-                      }
+                      final textStyle = _buildReaderTextStyle(novelProvider);
                       
                       return AnimatedBuilder(
                         animation: widget.controller,
@@ -236,7 +306,8 @@ class _ReaderPageState extends State<ReaderPage> {
                                 itemCount: widget.controller.pages.length,
                                 onPageChanged: (index) {
                                   Future<void> handleIndex(int effectiveIndex) async {
-                                    widget.controller.ensureMoreIfNeeded(effectiveIndex, c.biggest, textStyle);
+                                    final contentSize = _contentSize(c, novelProvider);
+                                    widget.controller.ensureMoreIfNeeded(effectiveIndex, contentSize, textStyle);
 
                                     final ref = widget.controller.pageRefAt(effectiveIndex);
                                     try {
@@ -264,7 +335,7 @@ class _ReaderPageState extends State<ReaderPage> {
                                   });
 
                                   widget.controller
-                                      .ensurePreviousIfNeeded(index, c.biggest, textStyle)
+                                      .ensurePreviousIfNeeded(index, _contentSize(c, novelProvider), textStyle)
                                       .then((added) {
                                     if (!mounted) return;
 
@@ -283,9 +354,6 @@ class _ReaderPageState extends State<ReaderPage> {
                                   });
                                 },
                                 itemBuilder: (_, i) {
-                                  final pageText = widget.controller.pages[i].join('\n');
-                                  final paragraphs = pageText.split('\n\n');
-                                  
                                   return Padding(
                                     padding: EdgeInsets.fromLTRB(
                                       novelProvider.readerPaddingLeft,
@@ -294,17 +362,9 @@ class _ReaderPageState extends State<ReaderPage> {
                                       novelProvider.readerPaddingBottom,
                                     ),
                                     child: SingleChildScrollView(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: paragraphs.map((paragraph) {
-                                          return Padding(
-                                            padding: EdgeInsets.only(bottom: novelProvider.paragraphSpacing),
-                                            child: Text(
-                                              paragraph,
-                                              style: textStyle,
-                                            ),
-                                          );
-                                        }).toList(),
+                                      child: Text(
+                                        widget.controller.pages[i].join('\n'),
+                                        style: textStyle,
                                       ),
                                     ),
                                   );
@@ -370,7 +430,7 @@ class _ReaderPageState extends State<ReaderPage> {
                   },
                   onChapterSelect: (index) {
                     _showCatalogOverlay = false;
-                    final layoutSize = _lastLayoutSize;
+                    final layoutSize = _lastContentSize;
                     final textStyle = _lastTextStyle;
                     if (layoutSize == null || textStyle == null) {
                       setState(() {});
