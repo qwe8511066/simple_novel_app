@@ -132,19 +132,19 @@ class NovelProvider with ChangeNotifier {
     }
     
     // 加载阅读界面背景图片路径
-    _readerBackgroundImage = prefs.getString('readerBackgroundImage');
+    _readerBackgroundImage = prefs.getString('readerBackgroundImage') ?? _readerBackgroundImage;
     
     // 加载阅读界面间距
-    _readerPaddingTop = prefs.getDouble('readerPaddingTop') ?? 20;
-    _readerPaddingBottom = prefs.getDouble('readerPaddingBottom') ?? 20;
-    _readerPaddingLeft = prefs.getDouble('readerPaddingLeft') ?? 20;
-    _readerPaddingRight = prefs.getDouble('readerPaddingRight') ?? 20;
+    _readerPaddingTop = prefs.getDouble('readerPaddingTop') ?? _readerPaddingTop;
+    _readerPaddingBottom = prefs.getDouble('readerPaddingBottom') ?? _readerPaddingBottom;
+    _readerPaddingLeft = prefs.getDouble('readerPaddingLeft') ?? _readerPaddingLeft;
+    _readerPaddingRight = prefs.getDouble('readerPaddingRight') ?? _readerPaddingRight;
     
     // 加载字体设置
-    _letterSpacing = prefs.getDouble('letterSpacing') ?? 0;
-    _lineSpacing = prefs.getDouble('lineSpacing') ?? 1.5;
-    _paragraphSpacing = prefs.getDouble('paragraphSpacing') ?? 16;
-    _fontFamily = prefs.getString('fontFamily') ?? 'sans-serif';
+    _letterSpacing = prefs.getDouble('letterSpacing') ?? _letterSpacing;
+    _lineSpacing = prefs.getDouble('lineSpacing') ?? _lineSpacing;
+    _paragraphSpacing = prefs.getDouble('paragraphSpacing') ?? _paragraphSpacing;
+    _fontFamily = prefs.getString('fontFamily') ?? _fontFamily;
     _customFontPath = prefs.getString('customFontPath');
 
     // 加载小说收藏元数据(包含进度)
@@ -460,10 +460,10 @@ class NovelProvider with ChangeNotifier {
   
   /// 重置阅读间距设置
   Future<void> resetPaddingSettings() async {
-    _readerPaddingTop = 20;
-    _readerPaddingBottom = 20;
-    _readerPaddingLeft = 20;
-    _readerPaddingRight = 20;
+    _readerPaddingTop = 100; // 与类定义的默认值一致
+    _readerPaddingBottom = 40; // 与类定义的默认值一致
+    _readerPaddingLeft = 20; // 与类定义的默认值一致
+    _readerPaddingRight = 20; // 与类定义的默认值一致
     await _saveConfig();
     notifyListeners();
   }
@@ -475,7 +475,7 @@ class NovelProvider with ChangeNotifier {
     _fontWeight = FontWeight.normal;
     _fontFamily = 'FZZiZhuAYuanTiB';
     _letterSpacing = 0;
-    _lineSpacing = 1.5;
+    _lineSpacing = 2; // 与类定义的默认值一致
     _paragraphSpacing = 16;
     _customFontPath = null;
     await _saveConfig();
