@@ -36,6 +36,9 @@ class ReaderController extends ChangeNotifier {
   bool _loadingMore = false;
   int initialGlobalPage = 0;
 
+  static final RegExp _chapterRegex =
+      RegExp(r'^第([零一二三四五六七八九十百千万\d]+)(章|节|回|话)[\s:_]*(.*)$');
+
   ReaderController(this.utf8File, {this.novelTitle});
 
   PageRef pageRefAt(int globalPageIndex) {
@@ -79,8 +82,9 @@ class ReaderController extends ChangeNotifier {
   Future<int> jumpToByteOffset(
     int byteOffset,
     Size size,
-    TextStyle style,
-  ) async {
+    TextStyle style, {
+    double paragraphSpacing = 0,
+  }) async {
     await ensureChapterIndexLoaded();
 
     final segIndex = _segmentIndexAtOffset(byteOffset);
@@ -89,6 +93,7 @@ class ReaderController extends ChangeNotifier {
       style,
       startSegmentIndex: segIndex,
       startPageInSegment: 0,
+      paragraphSpacing: paragraphSpacing,
     );
 
     var targetPage = 0;
@@ -111,6 +116,7 @@ class ReaderController extends ChangeNotifier {
     int startSegmentIndex = 0,
     int startPageInSegment = 0,
     int segmentCharCount = 5000,
+    double paragraphSpacing = 0,
   }) async {
     pages = [];
     _pageRefs.clear();
@@ -128,7 +134,7 @@ class ReaderController extends ChangeNotifier {
     final idx = _index!;
     final safeSegment = startSegmentIndex.clamp(0, idx.segmentCount - 1);
 
-    await _appendSegmentPages(safeSegment, size, style);
+    await _appendSegmentPages(safeSegment, size, style, paragraphSpacing: paragraphSpacing);
     _loadedMaxSegmentIndex = safeSegment;
     _loadedMinSegmentIndex = safeSegment;
 
@@ -139,14 +145,15 @@ class ReaderController extends ChangeNotifier {
     }
     notifyListeners();
 
-    unawaited(ensureMoreIfNeeded(initialGlobalPage, size, style));
+    unawaited(ensureMoreIfNeeded(initialGlobalPage, size, style, paragraphSpacing: paragraphSpacing));
   }
 
   Future<int> ensurePreviousIfNeeded(
     int currentGlobalPage,
     Size size,
-    TextStyle style,
-  ) async {
+    TextStyle style, {
+    double paragraphSpacing = 0,
+  }) async {
     final idx = _index;
     if (idx == null) return 0;
     if (_loadingMore) return 0;
@@ -157,7 +164,7 @@ class ReaderController extends ChangeNotifier {
     _loadingMore = true;
     try {
       final prevSeg = _loadedMinSegmentIndex - 1;
-      final added = await _prependSegmentPages(prevSeg, size, style);
+      final added = await _prependSegmentPages(prevSeg, size, style, paragraphSpacing: paragraphSpacing);
       if (added > 0) {
         _loadedMinSegmentIndex = prevSeg;
         notifyListeners();
@@ -171,8 +178,9 @@ class ReaderController extends ChangeNotifier {
   Future<void> ensureMoreIfNeeded(
     int currentGlobalPage,
     Size size,
-    TextStyle style,
-  ) async {
+    TextStyle style, {
+    double paragraphSpacing = 0,
+  }) async {
     final idx = _index;
     if (idx == null) return;
     if (_loadingMore) return;
@@ -184,7 +192,7 @@ class ReaderController extends ChangeNotifier {
     _loadingMore = true;
     try {
       final nextSeg = _loadedMaxSegmentIndex + 1;
-      await _appendSegmentPages(nextSeg, size, style);
+      await _appendSegmentPages(nextSeg, size, style, paragraphSpacing: paragraphSpacing);
       _loadedMaxSegmentIndex = nextSeg;
       notifyListeners();
     } finally {
@@ -195,8 +203,9 @@ class ReaderController extends ChangeNotifier {
   Future<void> _appendSegmentPages(
     int segmentIndex,
     Size size,
-    TextStyle style,
-  ) async {
+    TextStyle style, {
+    double paragraphSpacing = 0,
+  }) async {
     final idx = _index;
     if (idx == null) return;
 
@@ -229,8 +238,10 @@ class ReaderController extends ChangeNotifier {
       lineStartOffsets.add(currentLineStart);
     }
 
-    final engine = PaginationEngine(lines, style, size);
-    final segPages = engine.paginateWithLineIndex();
+    final engine = PaginationEngine(lines, style, size, paragraphSpacing: paragraphSpacing);
+    final segPages = engine.paginateWithLineIndexWhere(
+      shouldStartNewPage: (line) => _chapterRegex.hasMatch(line.trim()),
+    );
     for (var i = 0; i < segPages.length; i++) {
       final p = segPages[i];
       pages.add(p.lines);
@@ -253,8 +264,9 @@ class ReaderController extends ChangeNotifier {
   Future<int> _prependSegmentPages(
     int segmentIndex,
     Size size,
-    TextStyle style,
-  ) async {
+    TextStyle style, {
+    double paragraphSpacing = 0,
+  }) async {
     final idx = _index;
     if (idx == null) return 0;
 
@@ -285,8 +297,10 @@ class ReaderController extends ChangeNotifier {
       lineStartOffsets.add(currentLineStart);
     }
 
-    final engine = PaginationEngine(lines, style, size);
-    final segPages = engine.paginateWithLineIndex();
+    final engine = PaginationEngine(lines, style, size, paragraphSpacing: paragraphSpacing);
+    final segPages = engine.paginateWithLineIndexWhere(
+      shouldStartNewPage: (line) => _chapterRegex.hasMatch(line.trim()),
+    );
     if (segPages.isEmpty) return 0;
 
     final newPages = <List<String>>[];

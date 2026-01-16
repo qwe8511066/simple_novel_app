@@ -22,12 +22,12 @@ class NovelProvider with ChangeNotifier {
   // 阅读界面设置
   Color _readerBackgroundColor = Colors.white; // 阅读界面背景色
   String? _readerBackgroundImage = 'assets/images/reader_backgrounds/10dec9361b40818e066b942ff9adb352.jpg'; // 默认阅读界面背景图片
-  double _readerPaddingTop = 20; // 阅读界面顶部间距
-  double _readerPaddingBottom = 20; // 阅读界面底部间距
+  double _readerPaddingTop = 100; // 阅读界面顶部间距
+  double _readerPaddingBottom = 40; // 阅读界面底部间距
   double _readerPaddingLeft = 20; // 阅读界面左侧间距
   double _readerPaddingRight = 20; // 阅读界面右侧间距
   double _letterSpacing = 0; // 字距
-  double _lineSpacing = 1.5; // 行距
+  double _lineSpacing = 2; // 行距
   double _paragraphSpacing = 16; // 段距
   String _fontFamily = 'FZZiZhuAYuanTiB'; // 默认字体
   String? _customFontPath; // 第三方字体文件路径

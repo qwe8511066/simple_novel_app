@@ -166,6 +166,7 @@ class _ReaderPageState extends State<ReaderPage> {
         currentOffset,
         contentSize,
         textStyle,
+        paragraphSpacing: novelProvider.paragraphSpacing,
       );
       if (!mounted) return;
       _pageController?.dispose();
@@ -253,6 +254,7 @@ class _ReaderPageState extends State<ReaderPage> {
                           textStyle,
                           startSegmentIndex: _startSegmentIndex,
                           startPageInSegment: _startPageInSegment,
+                          paragraphSpacing: novelProvider.paragraphSpacing,
                         )
                         .then((_) {
                       if (mounted) {
@@ -307,7 +309,12 @@ class _ReaderPageState extends State<ReaderPage> {
                                 onPageChanged: (index) {
                                   Future<void> handleIndex(int effectiveIndex) async {
                                     final contentSize = _contentSize(c, novelProvider);
-                                    widget.controller.ensureMoreIfNeeded(effectiveIndex, contentSize, textStyle);
+                                    widget.controller.ensureMoreIfNeeded(
+                                      effectiveIndex,
+                                      contentSize,
+                                      textStyle,
+                                      paragraphSpacing: novelProvider.paragraphSpacing,
+                                    );
 
                                     final ref = widget.controller.pageRefAt(effectiveIndex);
                                     try {
@@ -335,7 +342,12 @@ class _ReaderPageState extends State<ReaderPage> {
                                   });
 
                                   widget.controller
-                                      .ensurePreviousIfNeeded(index, _contentSize(c, novelProvider), textStyle)
+                                      .ensurePreviousIfNeeded(
+                                        index,
+                                        _contentSize(c, novelProvider),
+                                        textStyle,
+                                        paragraphSpacing: novelProvider.paragraphSpacing,
+                                      )
                                       .then((added) {
                                     if (!mounted) return;
 
@@ -439,7 +451,12 @@ class _ReaderPageState extends State<ReaderPage> {
 
                     final byteOffset = widget.controller.chapterStartOffsetAt(index);
                     widget.controller
-                        .jumpToByteOffset(byteOffset, layoutSize, textStyle)
+                        .jumpToByteOffset(
+                          byteOffset,
+                          layoutSize,
+                          textStyle,
+                          paragraphSpacing: Provider.of<NovelProvider>(context, listen: false).paragraphSpacing,
+                        )
                         .then((targetPage) {
                       if (!mounted) return;
                       if (_pageController != null && _pageController!.hasClients) {
