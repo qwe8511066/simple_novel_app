@@ -12,11 +12,13 @@ import 'package:flutter/services.dart';
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
   final String novelId;
+  final int? startChapterIndex;
 
   const ReaderPage({
     super.key,
     required this.controller,
     required this.novelId,
+    this.startChapterIndex,
   });
 
   @override
@@ -29,6 +31,9 @@ class _ReaderPageState extends State<ReaderPage> {
   PageController? _pageController;
   int _startSegmentIndex = 0;
   int _startPageInSegment = 0;
+  bool _initializing = false;
+  bool _jumpingChapter = false;
+  int _currentChapterIndex = 0;
   
   bool _showUIOverlay = false; // 是否显示UI弹窗，默认显示以方便用户操作
   bool _showCatalogOverlay = false; // 是否显示目录弹窗
@@ -43,6 +48,45 @@ class _ReaderPageState extends State<ReaderPage> {
   Timer? _rePaginateDebounce;
   String? _lastTypographyKey;
 
+  Future<void> _jumpToChapter(int chapterIndex) async {
+    final layoutSize = _lastContentSize;
+    final textStyle = _lastTextStyle;
+    if (layoutSize == null || textStyle == null) return;
+
+    await widget.controller.ensureChapterIndexLoaded();
+
+    if (_jumpingChapter) return;
+    _jumpingChapter = true;
+
+    try {
+      setState(() {
+        _ready = false;
+      });
+      _pageController?.dispose();
+      _pageController = null;
+
+      final byteOffset = widget.controller.chapterStartOffsetAt(chapterIndex);
+      final targetPage = await widget.controller.jumpToByteOffset(
+        byteOffset,
+        layoutSize,
+        textStyle,
+        paragraphSpacing: Provider.of<NovelProvider>(context, listen: false).paragraphSpacing,
+      );
+      if (!mounted) return;
+
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: targetPage);
+      setState(() {
+        _currentPageIndex = targetPage;
+        _currentChapterIndex = chapterIndex;
+        _ready = true;
+      });
+      _persistProgress();
+    } finally {
+      _jumpingChapter = false;
+    }
+  }
+
   void _persistProgress() {
     if (!_ready) return;
     final ref = widget.controller.pageRefAt(_currentPageIndex);
@@ -51,6 +95,8 @@ class _ReaderPageState extends State<ReaderPage> {
 
       final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
       final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
+
+      _currentChapterIndex = chapterIndex;
 
       _novelProvider.updateNovelProgress(
         novel.copyWith(
@@ -70,6 +116,13 @@ class _ReaderPageState extends State<ReaderPage> {
     super.initState();
     _novelProvider = Provider.of<NovelProvider>(context, listen: false);
 
+    if (widget.startChapterIndex != null) {
+      _startSegmentIndex = 0;
+      _startPageInSegment = 0;
+      _currentPageIndex = 0;
+      return;
+    }
+
     // 加载保存的阅读进度
     try {
       final novel = _novelProvider.getNovelById(widget.novelId);
@@ -83,6 +136,10 @@ class _ReaderPageState extends State<ReaderPage> {
           novel.currentPageIndex != null &&
           novel.currentPageIndex! > 0) {
         _currentPageIndex = novel.currentPageIndex!;
+      }
+
+      if (novel.currentChapter != null) {
+        _currentChapterIndex = novel.currentChapter!;
       }
     } catch (_) {}
   }
@@ -248,25 +305,40 @@ class _ReaderPageState extends State<ReaderPage> {
                   _lastTextStyle = textStyle;
                   _scheduleRepaginate(novelProvider, c, textStyle);
                   if (!_ready) {
-                    widget.controller
-                        .loadInitial(
-                          contentSize,
-                          textStyle,
-                          startSegmentIndex: _startSegmentIndex,
-                          startPageInSegment: _startPageInSegment,
-                          paragraphSpacing: novelProvider.paragraphSpacing,
-                        )
-                        .then((_) {
-                      if (mounted) {
-                        final jumpTo = novelStartPage(widget.controller, _currentPageIndex);
-                        _pageController?.dispose();
-                        _pageController = PageController(initialPage: jumpTo);
-                        setState(() {
-                          _currentPageIndex = jumpTo;
-                          _ready = true;
+                    if (!_initializing && !_jumpingChapter) {
+                      _initializing = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        Future<void>(() async {
+                          if (!mounted) return;
+                          if (widget.startChapterIndex != null) {
+                            await _jumpToChapter(widget.startChapterIndex!);
+                          } else {
+                            await widget.controller.loadInitial(
+                              contentSize,
+                              textStyle,
+                              startSegmentIndex: _startSegmentIndex,
+                              startPageInSegment: _startPageInSegment,
+                              paragraphSpacing: novelProvider.paragraphSpacing,
+                            );
+                            if (!mounted) return;
+                            final jumpTo = novelStartPage(widget.controller, _currentPageIndex);
+                            _pageController?.dispose();
+                            _pageController = PageController(initialPage: jumpTo);
+                            setState(() {
+                              _currentPageIndex = jumpTo;
+                              _currentChapterIndex = widget.controller.chapterIndexAtOffset(
+                                widget.controller.pageRefAt(jumpTo).pageStartOffset,
+                              );
+                              _ready = true;
+                            });
+                          }
+                        }).whenComplete(() {
+                          if (mounted) {
+                            _initializing = false;
+                          }
                         });
-                      }
-                    });
+                      });
+                    }
                     return const Center(child: CircularProgressIndicator());
                   }
 
@@ -278,7 +350,7 @@ class _ReaderPageState extends State<ReaderPage> {
                       return AnimatedBuilder(
                         animation: widget.controller,
                         builder: (context, _) {
-                          final pageController = _pageController ??
+                          final pageController = _pageController ??=
                               PageController(initialPage: novelStartPage(widget.controller, _currentPageIndex));
 
                           return GestureDetector(
@@ -339,6 +411,9 @@ class _ReaderPageState extends State<ReaderPage> {
 
                                   setState(() {
                                     _currentPageIndex = index;
+                                    _currentChapterIndex = widget.controller.chapterIndexAtOffset(
+                                      widget.controller.pageRefAt(index).pageStartOffset,
+                                    );
                                   });
 
                                   widget.controller
@@ -433,7 +508,7 @@ class _ReaderPageState extends State<ReaderPage> {
               if (_showCatalogOverlay && _ready)
                 ReaderCatalogOverlay(
                   novelTitle: novel.title,
-                  currentChapterIndex: widget.controller.chapterIndexAtOffset(widget.controller.pageRefAt(_currentPageIndex).pageStartOffset),
+                  currentChapterIndex: _currentChapterIndex,
                   totalChapters: widget.controller.totalChapters,
                   chapterTitles: widget.controller.chapterTitles,
                   onBack: () {
@@ -442,32 +517,8 @@ class _ReaderPageState extends State<ReaderPage> {
                   },
                   onChapterSelect: (index) {
                     _showCatalogOverlay = false;
-                    final layoutSize = _lastContentSize;
-                    final textStyle = _lastTextStyle;
-                    if (layoutSize == null || textStyle == null) {
-                      setState(() {});
-                      return;
-                    }
-
-                    final byteOffset = widget.controller.chapterStartOffsetAt(index);
-                    widget.controller
-                        .jumpToByteOffset(
-                          byteOffset,
-                          layoutSize,
-                          textStyle,
-                          paragraphSpacing: Provider.of<NovelProvider>(context, listen: false).paragraphSpacing,
-                        )
-                        .then((targetPage) {
-                      if (!mounted) return;
-                      if (_pageController != null && _pageController!.hasClients) {
-                        _pageController!.jumpToPage(targetPage);
-                      }
-                      setState(() {
-                        _currentPageIndex = targetPage;
-                      });
-                      _persistProgress();
-                    });
                     setState(() {});
+                    _jumpToChapter(index);
                   },
                 ),
               // 设置弹窗组件

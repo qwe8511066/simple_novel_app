@@ -27,53 +27,74 @@ class ReaderCatalogOverlay extends StatefulWidget {
 }
 
 class _ReaderCatalogOverlayState extends State<ReaderCatalogOverlay> {
-    // 滚动控制器，用于自动滚动到当前章节
-    final ScrollController _scrollController = ScrollController();
-    
-    // 搜索相关状态
-    bool _isSearchMode = false;
-    String _searchQuery = '';
-    List<Map<String, dynamic>> _filteredChapterTitles = [];
-    Timer? _debounceTimer;
+  // 滚动控制器，用于自动滚动到当前章节
+  final ScrollController _scrollController = ScrollController();
+
+  // 搜索相关状态
+  bool _isSearchMode = false;
+  String _searchQuery = '';
+  List<Map<String, dynamic>> _filteredChapterTitles = [];
+  Timer? _debounceTimer;
+
+  void _scrollToCurrentChapter() {
+    if (!_scrollController.hasClients) return;
+    if (widget.currentChapterIndex < 0 || widget.currentChapterIndex >= widget.chapterTitles.length) {
+      return;
+    }
+
+    const double itemHeight = 52.0;
+    final double viewportHeight = _scrollController.position.viewportDimension;
+    double scrollPosition = widget.currentChapterIndex * itemHeight - (viewportHeight / 2) + (itemHeight / 2);
+    scrollPosition = scrollPosition < 0 ? 0 : scrollPosition;
+    final maxScrollExtent = _scrollController.position.maxScrollExtent;
+    scrollPosition = scrollPosition > maxScrollExtent ? maxScrollExtent : scrollPosition;
+
+    _scrollController.animateTo(
+      scrollPosition,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    
+
     // 初始化过滤后的章节列表
     _filteredChapterTitles = widget.chapterTitles.asMap().entries.map((entry) => {
-      'index': entry.key,
-      'title': entry.value
-    }).toList();
-    
+          'index': entry.key,
+          'title': entry.value
+        }).toList();
+
     // 组件初始化后，自动滚动到当前章节
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.currentChapterIndex >= 0 && widget.currentChapterIndex < widget.chapterTitles.length) {
-        // 使用固定的列表项高度
-        const double itemHeight = 52.0;
-        
-        // 获取列表可见区域的高度
-        final double viewportHeight = _scrollController.position.viewportDimension;
-        
-        // 计算滚动位置：当前章节位置 - 视口高度的一半 + 列表项高度的一半
-        // 这样可以让当前章节居中显示
-        double scrollPosition = widget.currentChapterIndex * itemHeight - (viewportHeight / 2) + (itemHeight / 2);
-        
-        // 确保滚动位置不小于0
-        scrollPosition = scrollPosition < 0 ? 0 : scrollPosition;
-        
-        // 确保滚动位置不超过最大滚动范围
-        final maxScrollExtent = _scrollController.position.maxScrollExtent;
-        scrollPosition = scrollPosition > maxScrollExtent ? maxScrollExtent : scrollPosition;
-        
-        // 执行滚动
-        _scrollController.animateTo(
-          scrollPosition,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      }
+      _scrollToCurrentChapter();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ReaderCatalogOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.chapterTitles != widget.chapterTitles) {
+      if (_searchQuery.isEmpty) {
+        _resetFilter();
+      } else {
+        _filteredChapterTitles = widget.chapterTitles.asMap().entries
+            .where((entry) => entry.value.toLowerCase().contains(_searchQuery.toLowerCase()))
+            .map((entry) => {
+                  'index': entry.key,
+                  'title': entry.value,
+                })
+            .toList();
+      }
+    }
+
+    if (oldWidget.currentChapterIndex != widget.currentChapterIndex && !_isSearchMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToCurrentChapter();
+      });
+    }
   }
 
   @override

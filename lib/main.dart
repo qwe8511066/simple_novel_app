@@ -102,6 +102,7 @@ class _MyAppState extends State<MyApp> {
                   ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
               final novelId = args['novelId'] as String;
               final novelTitle = args['novelTitle'] as String?;
+              final chapterIndex = args['chapterIndex'] as int?;
 
               return FutureBuilder<String>(
                 future: _getNovelFilePath(novelId),
@@ -120,7 +121,11 @@ class _MyAppState extends State<MyApp> {
                     novelTitle: novelTitle,
                   );
 
-                  return ReaderPage(controller: controller, novelId: novelId);
+                  return ReaderPage(
+                    controller: controller,
+                    novelId: novelId,
+                    startChapterIndex: chapterIndex,
+                  );
                 },
               );
             },
