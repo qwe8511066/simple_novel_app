@@ -31,6 +31,11 @@ class NovelProvider with ChangeNotifier {
   double _paragraphSpacing = 16; // 段距
   String _fontFamily = 'FZZiZhuAYuanTiB'; // 默认字体
   String? _customFontPath; // 第三方字体文件路径
+  
+  // 界面设置
+  String _pageTurnAnimation = '左右翻页'; // 翻页动画：左右翻页、上下翻页、仿真翻页
+  bool _volumeKeyPageTurning = true; // 音量键翻页开关
+  bool _hideStatusBar = true; // 隐藏状态栏开关
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
 
@@ -75,6 +80,11 @@ class NovelProvider with ChangeNotifier {
   double get paragraphSpacing => _paragraphSpacing;
   String get fontFamily => _fontFamily;
   String? get customFontPath => _customFontPath;
+  
+  // 界面设置 getters
+  String get pageTurnAnimation => _pageTurnAnimation;
+  bool get volumeKeyPageTurning => _volumeKeyPageTurning;
+  bool get hideStatusBar => _hideStatusBar;
   
   /// 初始化 - 加载本地小说和用户配置
   Future<void> init() async {
@@ -146,6 +156,11 @@ class NovelProvider with ChangeNotifier {
     _paragraphSpacing = prefs.getDouble('paragraphSpacing') ?? _paragraphSpacing;
     _fontFamily = prefs.getString('fontFamily') ?? _fontFamily;
     _customFontPath = prefs.getString('customFontPath');
+    
+    // 加载界面设置
+    _pageTurnAnimation = prefs.getString('pageTurnAnimation') ?? _pageTurnAnimation;
+    _volumeKeyPageTurning = prefs.getBool('volumeKeyPageTurning') ?? _volumeKeyPageTurning;
+    _hideStatusBar = prefs.getBool('hideStatusBar') ?? _hideStatusBar;
 
     // 加载小说收藏元数据(包含进度)
     final novelsJson = prefs.getString('favoriteNovelsMetadata');
@@ -217,6 +232,11 @@ class NovelProvider with ChangeNotifier {
     } else {
       await prefs.remove('customFontPath');
     }
+    
+    // 保存界面设置
+    await prefs.setString('pageTurnAnimation', _pageTurnAnimation);
+    await prefs.setBool('volumeKeyPageTurning', _volumeKeyPageTurning);
+    await prefs.setBool('hideStatusBar', _hideStatusBar);
   }
   
   /// 确保小说目录存在
@@ -406,6 +426,27 @@ class NovelProvider with ChangeNotifier {
     await _saveConfig();
     notifyListeners();
   }
+  
+  /// 设置翻页动画
+  Future<void> setPageTurnAnimation(String animation) async {
+    _pageTurnAnimation = animation;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置音量键翻页开关
+  Future<void> setVolumeKeyPageTurning(bool enabled) async {
+    _volumeKeyPageTurning = enabled;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 设置隐藏状态栏开关
+  Future<void> setHideStatusBar(bool enabled) async {
+    _hideStatusBar = enabled;
+    await _saveConfig();
+    notifyListeners();
+  }
 
   /// 切换收藏状态
   void toggleFavorite(Novel novel) {
@@ -478,6 +519,15 @@ class NovelProvider with ChangeNotifier {
     _lineSpacing = 2; // 与类定义的默认值一致
     _paragraphSpacing = 16;
     _customFontPath = null;
+    await _saveConfig();
+    notifyListeners();
+  }
+  
+  /// 重置界面设置
+  Future<void> resetInterfaceSettings() async {
+    _pageTurnAnimation = '左右翻页';
+    _volumeKeyPageTurning = true;
+    _hideStatusBar = true;
     await _saveConfig();
     notifyListeners();
   }

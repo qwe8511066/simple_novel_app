@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'reader_controller.dart';
 import '../../providers/novel_provider.dart';
@@ -8,7 +10,6 @@ import '../../utils/statusBarStyle.dart';
 import './reader_settings/reader_ui_overlay.dart';
 import './reader_settings/reader_catalog_overlay.dart';
 import './reader_settings/reader_settings_overlay.dart';
-import 'package:flutter/services.dart';
 class ReaderPage extends StatefulWidget {
   final ReaderController controller;
   final String novelId;
@@ -34,6 +35,9 @@ class _ReaderPageState extends State<ReaderPage> {
   bool _initializing = false;
   bool _jumpingChapter = false;
   int _currentChapterIndex = 0;
+
+  static const MethodChannel _volumeChannel = MethodChannel('com.example.app/volume_keys');
+  bool _volumeChannelBound = false;
   
   bool _showUIOverlay = false; // 是否显示UI弹窗，默认显示以方便用户操作
   bool _showCatalogOverlay = false; // 是否显示目录弹窗
@@ -47,6 +51,29 @@ class _ReaderPageState extends State<ReaderPage> {
 
   Timer? _rePaginateDebounce;
   String? _lastTypographyKey;
+
+  Future<void> _handleVolumeCommand(String method) async {
+    if (!_ready) return;
+    if (_showCatalogOverlay || _showSettingsOverlay) return;
+
+    final novelProvider = Provider.of<NovelProvider>(context, listen: false);
+    if (!novelProvider.volumeKeyPageTurning) return;
+
+    final pc = _pageController;
+    if (pc == null || !pc.hasClients) return;
+
+    if (method == 'volume_down') {
+      final next = (_currentPageIndex + 1).clamp(0, widget.controller.pages.length - 1);
+      if (next != _currentPageIndex) {
+        pc.animateToPage(next, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+      }
+    } else if (method == 'volume_up') {
+      final prev = (_currentPageIndex - 1).clamp(0, widget.controller.pages.length - 1);
+      if (prev != _currentPageIndex) {
+        pc.animateToPage(prev, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+      }
+    }
+  }
 
   Future<void> _jumpToChapter(int chapterIndex) async {
     final layoutSize = _lastContentSize;
@@ -115,6 +142,13 @@ class _ReaderPageState extends State<ReaderPage> {
   void initState() {
     super.initState();
     _novelProvider = Provider.of<NovelProvider>(context, listen: false);
+
+    if (!_volumeChannelBound) {
+      _volumeChannel.setMethodCallHandler((call) async {
+        await _handleVolumeCommand(call.method);
+      });
+      _volumeChannelBound = true;
+    }
 
     if (widget.startChapterIndex != null) {
       _startSegmentIndex = 0;
@@ -262,6 +296,7 @@ class _ReaderPageState extends State<ReaderPage> {
     if (novelProvider.customFontPath != null && novelProvider.customFontPath!.isNotEmpty) {
       _loadCustomFont(novelProvider.customFontPath!);
     }
+
   }
 
   @override

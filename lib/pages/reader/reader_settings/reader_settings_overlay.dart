@@ -71,8 +71,9 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
                       child: Row(
                         children: [
                           _buildTabButton(0, '背景', themeColor),
-                          _buildTabButton(1, '间距', themeColor),
-                          _buildTabButton(2, '字体', themeColor),
+                  _buildTabButton(1, '间距', themeColor),
+                  _buildTabButton(2, '字体', themeColor),
+                  _buildTabButton(3, '界面', themeColor),
                         ],
                       ),
                     ),
@@ -81,10 +82,12 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
                   // 内容区域
                   Expanded(
                     child: _currentTabIndex == 0
-                        ? _buildBackgroundSettings(novelProvider)
-                        : _currentTabIndex == 1
-                            ? _buildPaddingSettings(novelProvider)
-                            : _buildFontSettings(novelProvider),
+                      ? _buildBackgroundSettings(novelProvider)
+                      : _currentTabIndex == 1
+                          ? _buildPaddingSettings(novelProvider)
+                          : _currentTabIndex == 2
+                              ? _buildFontSettings(novelProvider)
+                              : _buildInterfaceSettings(novelProvider),
                   ),
                 ],
               ),
@@ -572,5 +575,87 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
         const SnackBar(content: Text('选择字体文件失败')),
       );
     }
+  }
+  
+  /// 构建界面设置页面
+  Widget _buildInterfaceSettings(NovelProvider novelProvider) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '翻页动画',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              ...['左右翻页', '上下翻页', '仿真翻页'].map((animation) {
+                final isSelected = novelProvider.pageTurnAnimation == animation;
+                return GestureDetector(
+                  onTap: () => novelProvider.setPageTurnAnimation(animation),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.blue : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      animation,
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildSwitchItem(
+            '音量键翻页',
+            novelProvider.volumeKeyPageTurning,
+            (value) => novelProvider.setVolumeKeyPageTurning(value),
+          ),
+          const SizedBox(height: 16),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {
+              novelProvider.resetInterfaceSettings();
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text('重置界面设置'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// 构建开关项
+  Widget _buildSwitchItem(
+    String title,
+    bool currentValue,
+    Function(bool) onChanged,
+  ) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title),
+        Switch(
+          value: currentValue,
+          onChanged: onChanged,
+        ),
+      ],
+    );
   }
 }
