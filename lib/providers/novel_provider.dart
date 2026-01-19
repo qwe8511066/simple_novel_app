@@ -33,7 +33,7 @@ class NovelProvider with ChangeNotifier {
   String? _customFontPath; // 第三方字体文件路径
   
   // 界面设置
-  String _pageTurnAnimation = '左右翻页'; // 翻页动画：左右翻页、上下翻页、仿真翻页
+  String _pageTurnAnimation = '左右翻页'; // 翻页动画：左右翻页、覆盖翻页、滚动翻页
   bool _volumeKeyPageTurning = true; // 音量键翻页开关
   bool _hideStatusBar = true; // 隐藏状态栏开关
   /// 获取收藏的小说列表

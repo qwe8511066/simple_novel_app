@@ -596,7 +596,7 @@ class _ReaderSettingsOverlayState extends State<ReaderSettingsOverlay> {
             spacing: 12,
             runSpacing: 12,
             children: [
-              ...['左右翻页', '上下翻页', '仿真翻页'].map((animation) {
+              ...['左右翻页', '覆盖翻页','滚动翻页'].map((animation) {
                 final isSelected = novelProvider.pageTurnAnimation == animation;
                 return GestureDetector(
                   onTap: () => novelProvider.setPageTurnAnimation(animation),
