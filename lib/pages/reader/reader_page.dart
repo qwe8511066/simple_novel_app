@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'reader_controller.dart';
 import '../../providers/novel_provider.dart';
 import '../../utils/statusBarStyle.dart';
+import '../../utils/volume_key_controller.dart';
 import './reader_settings/reader_ui_overlay.dart';
 import './reader_settings/reader_catalog_overlay.dart';
 import './reader_settings/reader_settings_overlay.dart';
@@ -54,7 +55,7 @@ class _ReaderPageState extends State<ReaderPage> {
 
   Future<void> _handleVolumeCommand(String method) async {
     if (!_ready) return;
-    if (_showCatalogOverlay || _showSettingsOverlay) return;
+    if (_showCatalogOverlay || _showSettingsOverlay || _showUIOverlay) return;
 
     final novelProvider = Provider.of<NovelProvider>(context, listen: false);
     if (!novelProvider.volumeKeyPageTurning) return;
@@ -150,6 +151,9 @@ class _ReaderPageState extends State<ReaderPage> {
       _volumeChannelBound = true;
     }
 
+    // 进入阅读页面时启用音量键拦截
+    VolumeKeyController.setVolumeKeysEnabled(true);
+
     if (widget.startChapterIndex != null) {
       _startSegmentIndex = 0;
       _startPageInSegment = 0;
@@ -183,6 +187,10 @@ class _ReaderPageState extends State<ReaderPage> {
     _rePaginateDebounce?.cancel();
     _persistProgress();
     _pageController?.dispose();
+    
+    // 离开阅读页面时禁用音量键拦截
+    VolumeKeyController.setVolumeKeysEnabled(false);
+    
     super.dispose();
   }
 
@@ -311,21 +319,20 @@ class _ReaderPageState extends State<ReaderPage> {
           onWillPop: () async {
             if (_showCatalogOverlay) {
               // 隐藏目录弹窗
-              _showCatalogOverlay = false;
-              setState(() {});
+              _updateOverlayState(showCatalog: false);
               return false; // 拦截返回
             } else if (_showSettingsOverlay) {
               // 隐藏设置弹窗
-              _showSettingsOverlay = false;
-              setState(() {});
+              _updateOverlayState(showSettings: false);
               return false; // 拦截返回
             } else if (_showUIOverlay) {
               // 隐藏UI弹窗
-              _showUIOverlay = false;
-              setState(() {});
+              _updateOverlayState(showUI: false);
               return false; // 拦截返回
             }
             // 如果没有弹窗显示，则正常返回
+            // 在返回前禁用音量键拦截
+            VolumeKeyController.setVolumeKeysEnabled(false);
             return true;
           },
           child: Stack(
@@ -391,9 +398,7 @@ class _ReaderPageState extends State<ReaderPage> {
                           return GestureDetector(
                             behavior: HitTestBehavior.translucent,
                             onTap: () {
-                              setState(() {
-                                _showUIOverlay = !_showUIOverlay;
-                              });
+                              _updateOverlayState(showUI: !_showUIOverlay);
                             },
                             child: Container(
                               // 设置背景颜色或图片
@@ -511,23 +516,18 @@ class _ReaderPageState extends State<ReaderPage> {
                     Navigator.pop(context);
                   },
                   onCatalog: () {
-                    _showUIOverlay = false;
-                    _showCatalogOverlay = true;
-                    setState(() {});
+                    _updateOverlayState(showUI: false, showCatalog: true);
                     // 目录按钮点击事件
                     print('目录按钮点击');
                   },
                   onReadAloud: () {
-                    _showUIOverlay = false;
-                    setState(() {});
+                    _updateOverlayState(showUI: false);
                     // 朗读按钮点击事件
                     print('朗读按钮点击');
                     // TODO: 实现朗读功能
                   },
                   onInterface: () {
-                    _showUIOverlay = false;
-                    _showSettingsOverlay = true;
-                    setState(() {});
+                    _updateOverlayState(showUI: false, showSettings: true);
                     // 界面按钮点击事件
                     print('界面按钮点击');
                   },
@@ -535,8 +535,7 @@ class _ReaderPageState extends State<ReaderPage> {
                   onClose: () {
                     debugPrint('关闭按钮点击');
                     // 关闭弹窗
-                    _showUIOverlay = false;
-                    setState(() {});
+                    _updateOverlayState(showUI: false);
                   },
                 ),
               // 目录弹窗组件
@@ -547,12 +546,10 @@ class _ReaderPageState extends State<ReaderPage> {
                   totalChapters: widget.controller.totalChapters,
                   chapterTitles: widget.controller.chapterTitles,
                   onBack: () {
-                    _showCatalogOverlay = false;
-                    setState(() {});
+                    _updateOverlayState(showCatalog: false);
                   },
                   onChapterSelect: (index) {
-                    _showCatalogOverlay = false;
-                    setState(() {});
+                    _updateOverlayState(showCatalog: false);
                     _jumpToChapter(index);
                   },
                 ),
@@ -560,8 +557,7 @@ class _ReaderPageState extends State<ReaderPage> {
               if (_showSettingsOverlay && _ready)
                 ReaderSettingsOverlay(
                   onBack: () {
-                    _showSettingsOverlay = false;
-                    setState(() {});
+                    _updateOverlayState(showSettings: false);
                   },
                 ),
             ],
@@ -571,6 +567,27 @@ class _ReaderPageState extends State<ReaderPage> {
     );
   }
 
+  /// 更新overlay显示状态并相应地控制音量键拦截
+  Future<void> _updateOverlayState({
+    bool? showUI,
+    bool? showCatalog,
+    bool? showSettings,
+  }) async {
+    bool shouldInterceptVolume = true;
+    
+    if (showUI != null) _showUIOverlay = showUI;
+    if (showCatalog != null) _showCatalogOverlay = showCatalog;
+    if (showSettings != null) _showSettingsOverlay = showSettings;
+    
+    // 如果有任何overlay显示，则不拦截音量键
+    if (_showUIOverlay || _showCatalogOverlay || _showSettingsOverlay) {
+      shouldInterceptVolume = false;
+    }
+    
+    await VolumeKeyController.updateVolumeKeyStatus(shouldIntercept: shouldInterceptVolume);
+    setState(() {});
+  }
+  
   int novelStartPage(ReaderController controller, int fallbackPage) {
     if (controller.initialGlobalPage > 0) return controller.initialGlobalPage;
     return fallbackPage;
