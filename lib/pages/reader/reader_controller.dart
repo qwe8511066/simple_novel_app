@@ -27,6 +27,11 @@ class ReaderController extends ChangeNotifier {
 
   List<List<String>> pages = [];
 
+  List<String> _carryLines = [];
+  List<int> _carryAbsOffsets = [];
+  int _carrySegmentIndex = 0;
+  int _carrySegmentStartOffset = 0;
+
   TxtSegmentIndex? _index;
   TxtChapterIndex? _chapterIndex;
   final List<PageRef> _pageRefs = [];
@@ -120,6 +125,10 @@ class ReaderController extends ChangeNotifier {
   }) async {
     pages = [];
     _pageRefs.clear();
+    _carryLines = [];
+    _carryAbsOffsets = [];
+    _carrySegmentIndex = 0;
+    _carrySegmentStartOffset = 0;
     _loadedMaxSegmentIndex = -1;
     _loadedMinSegmentIndex = 0;
     initialGlobalPage = 0;
@@ -238,23 +247,72 @@ class ReaderController extends ChangeNotifier {
       lineStartOffsets.add(currentLineStart);
     }
 
-    final engine = PaginationEngine(lines, style, size, paragraphSpacing: paragraphSpacing);
+    final carryCount = _carryLines.length;
+    final effectiveLines = carryCount == 0 ? lines : [..._carryLines, ...lines];
+
+    final engine = PaginationEngine(effectiveLines, style, size, paragraphSpacing: paragraphSpacing);
     final segPages = engine.paginateWithLineIndexWhere(
       shouldStartNewPage: (line) => _chapterRegex.hasMatch(line.trim()),
     );
+
+    if (segPages.isNotEmpty) {
+      final last = segPages.last;
+      final tp = TextPainter(
+        text: TextSpan(text: last.lines.join('\n'), style: style),
+        maxLines: null,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width);
+
+      final isUnderfilled = tp.height < size.height * 0.75;
+      final isChapterTitleOnly = last.lines.where((e) => e.trim().isNotEmpty).length == 1 &&
+          _chapterRegex.hasMatch(last.lines.first.trim());
+
+      if (isUnderfilled || isChapterTitleOnly) {
+        final absOffsets = <int>[];
+        for (var j = 0; j < last.lines.length; j++) {
+          final startLineIdx = last.startLineIndex + j;
+          if (startLineIdx < carryCount) {
+            absOffsets.add(_carryAbsOffsets[startLineIdx]);
+          } else {
+            final idxInSeg = startLineIdx - carryCount;
+            final off = (idxInSeg >= 0 && idxInSeg < lineStartOffsets.length)
+                ? lineStartOffsets[idxInSeg]
+                : 0;
+            absOffsets.add(start + off);
+          }
+        }
+
+        _carryLines = List<String>.from(last.lines);
+        _carryAbsOffsets = absOffsets;
+        if (last.startLineIndex >= carryCount) {
+          _carrySegmentIndex = segmentIndex;
+          _carrySegmentStartOffset = start;
+        }
+        segPages.removeLast();
+      } else {
+        _carryLines = [];
+        _carryAbsOffsets = [];
+      }
+    }
+
     for (var i = 0; i < segPages.length; i++) {
       final p = segPages[i];
       pages.add(p.lines);
-      final lineOffsetInSeg =
-          (p.startLineIndex >= 0 && p.startLineIndex < lineStartOffsets.length)
-          ? lineStartOffsets[p.startLineIndex]
-          : 0;
-      final pageStartOffset = start + lineOffsetInSeg;
+
+      final isFromCarry = p.startLineIndex < carryCount;
+      final pageStartOffset = isFromCarry
+          ? _carryAbsOffsets[p.startLineIndex]
+          : start +
+              (((p.startLineIndex - carryCount) >= 0 &&
+                      (p.startLineIndex - carryCount) < lineStartOffsets.length)
+                  ? lineStartOffsets[p.startLineIndex - carryCount]
+                  : 0);
+
       _pageRefs.add(
         PageRef(
-          segmentIndex: segmentIndex,
+          segmentIndex: isFromCarry ? _carrySegmentIndex : segmentIndex,
           pageInSegment: i,
-          segmentStartOffset: start,
+          segmentStartOffset: isFromCarry ? _carrySegmentStartOffset : start,
           pageStartOffset: pageStartOffset,
         ),
       );

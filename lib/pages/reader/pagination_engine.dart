@@ -64,109 +64,112 @@ class PaginationEngine {
     final pages = <PaginatedPage>[];
     var page = <String>[];
     var pageStartLineIndex = 0;
-    double height = 0;
 
-    var previousWasChapterTitle = false;
-
-    int lineIndex = 0;
-    while (lineIndex < lines.length) {
-      final line = lines[lineIndex];
-
-      if (shouldStartNewPage != null && shouldStartNewPage(line) && page.isNotEmpty) {
-        pages.add(PaginatedPage(startLineIndex: pageStartLineIndex, lines: page));
-        page = [];
-        pageStartLineIndex = lineIndex;
-        height = 0;
-      }
-
-      if (line.trim().isEmpty) {
-        // Skip leading / repeated blank lines; paragraph spacing is handled explicitly.
-        lineIndex++;
-        continue;
-      }
-
-      final paragraphStartIndex = lineIndex;
-      final paragraphLines = <String>[];
-      while (lineIndex < lines.length && lines[lineIndex].trim().isNotEmpty) {
-        paragraphLines.add(lines[lineIndex]);
-        lineIndex++;
-      }
-
-      var hasSeparator = false;
-      while (lineIndex < lines.length && lines[lineIndex].trim().isEmpty) {
-        hasSeparator = true;
-        lineIndex++;
-      }
-
-      final paragraphText = paragraphLines.join('\n');
+    double _measureLinesHeight(List<String> lines) {
       final tp = TextPainter(
-        text: TextSpan(text: paragraphText, style: style),
+        text: TextSpan(text: lines.join('\n'), style: style),
         maxLines: null,
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: size.width);
+      return tp.height;
+    }
 
-      final isChapterTitleParagraph = shouldStartNewPage != null &&
-          paragraphLines.isNotEmpty &&
-          shouldStartNewPage(paragraphLines.first);
+    void _flushPageIfNotEmpty() {
+      if (page.isEmpty) return;
+      pages.add(PaginatedPage(startLineIndex: pageStartLineIndex, lines: page));
+      page = [];
+    }
 
-      final spacingBefore = page.isEmpty
-          ? 0.0
-          : (previousWasChapterTitle ? (paragraphSpacing * 0.5) : paragraphSpacing);
-      if (height + spacingBefore + tp.height > size.height) {
-        if (page.isNotEmpty) {
-          pages.add(PaginatedPage(startLineIndex: pageStartLineIndex, lines: page));
-          page = [];
-          pageStartLineIndex = paragraphStartIndex;
-          height = 0;
+    int lineIndex = 0;
+    while (lineIndex < lines.length) {
+      var line = lines[lineIndex];
+      final isChapterTitle =
+          shouldStartNewPage != null && shouldStartNewPage(line.trim());
+
+      if (isChapterTitle && page.isNotEmpty) {
+        _flushPageIfNotEmpty();
+        pageStartLineIndex = lineIndex;
+      }
+
+      while (true) {
+        page.add(line);
+        final h = _measureLinesHeight(page);
+
+        if (h <= size.height) {
+          break;
         }
 
-        // Paragraph is too tall to fit in one page; fall back to line-based splitting.
-        final startForSplit = paragraphStartIndex;
-        for (var i = 0; i < paragraphLines.length; i++) {
-          final l = paragraphLines[i];
-          final lt = TextPainter(
-            text: TextSpan(text: l, style: style),
-            maxLines: null,
-            textDirection: TextDirection.ltr,
-          )..layout(maxWidth: size.width);
+        page.removeLast();
 
-          if (height + lt.height > size.height) {
-            if (page.isNotEmpty) {
-              pages.add(PaginatedPage(startLineIndex: pageStartLineIndex, lines: page));
-              page = [];
-              pageStartLineIndex = startForSplit + i;
-              height = 0;
-            } else {
-              pages.add(PaginatedPage(startLineIndex: startForSplit + i, lines: [l]));
-              page = [];
-              pageStartLineIndex = startForSplit + i + 1;
-              height = 0;
+        if (page.isNotEmpty) {
+          final baseHeight = _measureLinesHeight(page);
+          final remaining = size.height - baseHeight;
+          if (remaining > 0) {
+            var lo = 1;
+            var hi = line.length;
+            var best = 0;
+            while (lo <= hi) {
+              final mid = (lo + hi) >> 1;
+              final prefix = line.substring(0, mid);
+              final testLines = [...page, prefix];
+              final th = _measureLinesHeight(testLines);
+              if (th <= size.height) {
+                best = mid;
+                lo = mid + 1;
+              } else {
+                hi = mid - 1;
+              }
+            }
+
+            if (best > 0 && best < line.length) {
+              final head = line.substring(0, best);
+              final tail = line.substring(best);
+              page.add(head);
+              _flushPageIfNotEmpty();
+              pageStartLineIndex = lineIndex;
+              line = tail;
               continue;
             }
           }
 
-          page.add(l);
-          height += lt.height;
+          _flushPageIfNotEmpty();
+          pageStartLineIndex = lineIndex;
+          continue;
         }
 
-        if (hasSeparator && lineIndex < lines.length && !isChapterTitleParagraph) {
-          page.add('');
+        if (line.isNotEmpty) {
+          var lo = 1;
+          var hi = line.length;
+          var best = 0;
+          while (lo <= hi) {
+            final mid = (lo + hi) >> 1;
+            final prefix = line.substring(0, mid);
+            final th = _measureLinesHeight([prefix]);
+            if (th <= size.height) {
+              best = mid;
+              lo = mid + 1;
+            } else {
+              hi = mid - 1;
+            }
+          }
+          if (best > 0 && best < line.length) {
+            final head = line.substring(0, best);
+            final tail = line.substring(best);
+            page.add(head);
+            _flushPageIfNotEmpty();
+            pageStartLineIndex = lineIndex;
+            line = tail;
+            continue;
+          }
         }
-        previousWasChapterTitle = isChapterTitleParagraph;
-        continue;
+
+        page.add(line);
+        _flushPageIfNotEmpty();
+        pageStartLineIndex = lineIndex + 1;
+        break;
       }
 
-      if (spacingBefore > 0) {
-        height += spacingBefore;
-      }
-      page.addAll(paragraphLines);
-      height += tp.height;
-
-      // Do not preserve a blank separator right after a chapter title.
-      if (hasSeparator && lineIndex < lines.length && !isChapterTitleParagraph) {
-        page.add('');
-      }
-      previousWasChapterTitle = isChapterTitleParagraph;
+      lineIndex++;
     }
 
     if (page.isNotEmpty) {
