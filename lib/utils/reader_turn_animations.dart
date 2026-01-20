@@ -429,6 +429,7 @@ class ReaderTurnEffects {
     final w = MediaQuery.of(context).size.width;
     final delta = rawDelta.clamp(-1.0, 1.0);
     final t = (delta.abs() * settleDamp).clamp(0.0, 1.0);
+    final judgeT = t > 0.0001;
     final isCurrent = delta >= 0;
 
     final outgoingScale = isCurrent ? (1.0 - (0.03 * t)) : 1.0;
@@ -456,7 +457,7 @@ class ReaderTurnEffects {
                     ? const []
                     : [
                         BoxShadow(
-                          color: Colors.black.withOpacity(incomingShadow),
+                          color: Colors.transparent,
                           blurRadius: 0,
                           spreadRadius: 2,
                           offset: Offset(w, 0),
@@ -471,7 +472,7 @@ class ReaderTurnEffects {
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    width: 18,
+                    width: judgeT ? 18 : 0,
                     child: IgnorePointer(
                       child: Opacity(
                         opacity: rightShadeOpacity <= 0.0001 ? 0.0 : 1.0,
@@ -494,7 +495,7 @@ class ReaderTurnEffects {
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    width: 2,
+                    width: judgeT ? 2 : 0,
                     child: IgnorePointer(
                       child: ColoredBox(
                         color: Colors.black.withOpacity(rightEdgeOpacity),
@@ -502,13 +503,13 @@ class ReaderTurnEffects {
                     ),
                   ),
                   Positioned(
-                    left: 0,
+                    left: -6,
                     top: 0,
                     bottom: 0,
-                    width: 6,
+                    width: judgeT ? 6 : 0,
                     child: IgnorePointer(
                       child: ColoredBox(
-                        color: Colors.black.withOpacity(leftEdgeOpacity),
+                        color: Colors.red,
                       ),
                     ),
                   ),
