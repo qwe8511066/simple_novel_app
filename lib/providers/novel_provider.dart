@@ -33,7 +33,7 @@ class NovelProvider with ChangeNotifier {
   String? _customFontPath; // 第三方字体文件路径
   
   // 界面设置
-  String _pageTurnAnimation = '左右翻页'; // 翻页动画：左右翻页、覆盖翻页、仿真翻页
+  String _readerTurnAnimation = '左右翻页'; // 翻页动画：左右翻页、覆盖翻页、仿真翻页
   bool _volumeKeyPageTurning = true; // 音量键翻页开关
   bool _hideStatusBar = true; // 隐藏状态栏开关
   /// 获取收藏的小说列表
@@ -82,7 +82,7 @@ class NovelProvider with ChangeNotifier {
   String? get customFontPath => _customFontPath;
   
   // 界面设置 getters
-  String get pageTurnAnimation => _pageTurnAnimation;
+  String get readerTurnAnimation => _readerTurnAnimation;
   bool get volumeKeyPageTurning => _volumeKeyPageTurning;
   bool get hideStatusBar => _hideStatusBar;
   
@@ -158,7 +158,7 @@ class NovelProvider with ChangeNotifier {
     _customFontPath = prefs.getString('customFontPath');
     
     // 加载界面设置
-    _pageTurnAnimation = prefs.getString('pageTurnAnimation') ?? _pageTurnAnimation;
+    _readerTurnAnimation = prefs.getString('readerTurnAnimation') ?? _readerTurnAnimation;
     _volumeKeyPageTurning = prefs.getBool('volumeKeyPageTurning') ?? _volumeKeyPageTurning;
     _hideStatusBar = prefs.getBool('hideStatusBar') ?? _hideStatusBar;
 
@@ -234,7 +234,7 @@ class NovelProvider with ChangeNotifier {
     }
     
     // 保存界面设置
-    await prefs.setString('pageTurnAnimation', _pageTurnAnimation);
+    await prefs.setString('readerTurnAnimation', _readerTurnAnimation);
     await prefs.setBool('volumeKeyPageTurning', _volumeKeyPageTurning);
     await prefs.setBool('hideStatusBar', _hideStatusBar);
   }
@@ -428,8 +428,8 @@ class NovelProvider with ChangeNotifier {
   }
   
   /// 设置翻页动画
-  Future<void> setPageTurnAnimation(String animation) async {
-    _pageTurnAnimation = animation;
+  Future<void> setReaderTurnAnimation(String animation) async {
+    _readerTurnAnimation = animation;
     await _saveConfig();
     notifyListeners();
   }
@@ -525,7 +525,7 @@ class NovelProvider with ChangeNotifier {
   
   /// 重置界面设置
   Future<void> resetInterfaceSettings() async {
-    _pageTurnAnimation = '左右翻页';
+    _readerTurnAnimation = '左右翻页';
     _volumeKeyPageTurning = true;
     _hideStatusBar = true;
     await _saveConfig();

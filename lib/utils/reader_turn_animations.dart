@@ -301,7 +301,7 @@ class SimulatedPageTurnAnimation extends PageTransitionsBuilder {
 }
 
 /// 翻页动画工具类：根据动画名称返回对应的 PageTransitionsBuilder
-class PageTurnAnimationUtils {
+class ReaderTurnAnimationUtils {
   /// 根据动画名称获取对应的翻页动画实现
   /// [animationName] - 动画名称，可选值：'左右翻页'、'覆盖翻页'、'仿真翻页'
   static PageTransitionsBuilder getAnimation(String animationName) {
@@ -321,7 +321,7 @@ class PageTurnAnimationUtils {
 
 /// 阅读页面翻页效果包装器：基于 PageController 的 AnimatedBuilder 包裹每页内容
 /// 根据 animationName 决定效果（覆盖、仿真、滑动）
-class ReaderPageTurnEffects {
+class ReaderTurnEffects {
   /// 包装阅读页面内容，添加翻页效果
   /// [animationName] - 动画名称
   /// [controller] - 页面控制器

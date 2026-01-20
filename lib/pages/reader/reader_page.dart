@@ -8,7 +8,7 @@ import 'reader_controller.dart';
 import '../../providers/novel_provider.dart';
 import '../../utils/statusBarStyle.dart';
 import '../../utils/volume_key_controller.dart';
-import '../../utils/page_turn_animations.dart';
+import '../../utils/reader_turn_animations.dart';
 import './reader_settings/reader_ui_overlay.dart';
 import './reader_settings/reader_catalog_overlay.dart';
 import './reader_settings/reader_settings_overlay.dart';
@@ -75,7 +75,7 @@ class _ReaderPageState extends State<ReaderPage> {
       final next = (_currentPageIndex + 1).clamp(0, widget.controller.pages.length - 1);
       if (next != _currentPageIndex) {
         // 根据当前选择的翻页动画设置动画曲线
-        Curve curve = _getAnimationCurve(novelProvider.pageTurnAnimation);
+        Curve curve = _getAnimationCurve(novelProvider.readerTurnAnimation);
         pc.animateToPage(next, duration: const Duration(milliseconds: 300), curve: curve);
       }
     } else if (method == 'volume_up') {
@@ -83,7 +83,7 @@ class _ReaderPageState extends State<ReaderPage> {
       final prev = (_currentPageIndex - 1).clamp(0, widget.controller.pages.length - 1);
       if (prev != _currentPageIndex) {
         // 根据当前选择的翻页动画设置动画曲线
-        Curve curve = _getAnimationCurve(novelProvider.pageTurnAnimation);
+        Curve curve = _getAnimationCurve(novelProvider.readerTurnAnimation);
         pc.animateToPage(prev, duration: const Duration(milliseconds: 300), curve: curve);
       }
     }
@@ -487,7 +487,7 @@ class _ReaderPageState extends State<ReaderPage> {
                               child: PageView.builder(
                                 controller: pageController,
                                 itemCount: widget.controller.pages.length, // 总页数
-                                physics: _getPageViewPhysics(novelProvider.pageTurnAnimation), // 根据翻页动画设置物理属性
+                                physics: _getPageViewPhysics(novelProvider.readerTurnAnimation), // 根据翻页动画设置物理属性
                                 onPageChanged: (index) {
                                   Future<void> handleIndex(int effectiveIndex) async {
                                     // 确保当前页和下一页已加载
@@ -576,8 +576,8 @@ class _ReaderPageState extends State<ReaderPage> {
                                   );
 
                                   // 应用翻页动画效果
-                                  return ReaderPageTurnEffects.wrap(
-                                    animationName: novelProvider.pageTurnAnimation,
+                                    return ReaderTurnEffects.wrap(
+                                    animationName: novelProvider.readerTurnAnimation,
                                     controller: pageController,
                                     index: i,
                                     child: page,
