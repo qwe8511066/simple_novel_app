@@ -441,8 +441,6 @@ class ReaderTurnEffects {
         isCurrent ? (0.22 * (1.0 - t)).clamp(0.0, 0.22) : 0.0;
     final rightEdgeOpacity =
         isCurrent ? (0.14 * (1.0 - t)).clamp(0.0, 0.14) : 0.0;
-    final leftEdgeOpacity =
-        !isCurrent ? (0.10 * (1.0 - t)).clamp(0.0, 0.10) : 0.0;
 
     return RepaintBoundary(
       child: ClipRect(
