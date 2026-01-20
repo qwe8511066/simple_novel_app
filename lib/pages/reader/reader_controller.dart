@@ -348,8 +348,12 @@ class ReaderController extends ChangeNotifier {
     }
 
     // 将分页结果添加到页面列表
+    var keptPageInSegment = 0;
     for (var i = 0; i < segPages.length; i++) {
       final p = segPages[i];
+      final isBlankPage = p.lines.every((e) => e.trim().isEmpty);
+      if (isBlankPage) continue;
+
       pages.add(p.lines);
 
       // 计算页面的起始偏移量
@@ -366,11 +370,13 @@ class ReaderController extends ChangeNotifier {
       _pageRefs.add(
         PageRef(
           segmentIndex: isFromCarry ? _carrySegmentIndex : segmentIndex,
-          pageInSegment: i,
+          pageInSegment: keptPageInSegment,
           segmentStartOffset: isFromCarry ? _carrySegmentStartOffset : start,
           pageStartOffset: pageStartOffset,
         ),
       );
+
+      keptPageInSegment++;
     }
   }
 
@@ -426,8 +432,12 @@ class ReaderController extends ChangeNotifier {
     final newPages = <List<String>>[];
     final newRefs = <PageRef>[];
 
+    var keptPageInSegment = 0;
     for (var i = 0; i < segPages.length; i++) {
       final p = segPages[i];
+      final isBlankPage = p.lines.every((e) => e.trim().isEmpty);
+      if (isBlankPage) continue;
+
       newPages.add(p.lines);
       // 计算页面的起始偏移量
       final lineOffsetInSeg =
@@ -439,11 +449,13 @@ class ReaderController extends ChangeNotifier {
       newRefs.add(
         PageRef(
           segmentIndex: segmentIndex,
-          pageInSegment: i,
+          pageInSegment: keptPageInSegment,
           segmentStartOffset: start,
           pageStartOffset: pageStartOffset,
         ),
       );
+
+      keptPageInSegment++;
     }
 
     // 在当前页面列表前面插入新页面

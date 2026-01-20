@@ -112,6 +112,12 @@ class PaginationEngine {
     int lineIndex = 0; // 当前处理的行索引
     while (lineIndex < lines.length) {
       var line = lines[lineIndex]; // 当前处理的行
+
+      if (page.isEmpty && line.trim().isEmpty) {
+        lineIndex++;
+        pageStartLineIndex = lineIndex;
+        continue;
+      }
       // 判断当前行是否满足开始新页面的条件
       final isChapterTitle =
           shouldStartNewPage != null && shouldStartNewPage(line.trim());
@@ -216,6 +222,12 @@ class PaginationEngine {
             line = tail;
             continue;
           }
+        }
+
+        if (line.trim().isEmpty) {
+          lineIndex++;
+          pageStartLineIndex = lineIndex;
+          break;
         }
 
         // 无法分割行，直接添加到页面
