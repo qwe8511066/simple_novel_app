@@ -123,10 +123,6 @@ class ReaderController extends ChangeNotifier {
     _index ??= await TxtSegmentIndexManager.loadOrBuild(utf8File);
 
     final segIndex = _segmentIndexAtOffset(byteOffset);
-    assert(() {
-      debugPrint('[ReaderJump] byteOffset=$byteOffset segIndex=$segIndex');
-      return true;
-    }());
     await loadInitial(
       size,
       style,
@@ -145,10 +141,6 @@ class ReaderController extends ChangeNotifier {
     }
 
     initialGlobalPage = targetPage.clamp(0, pages.isEmpty ? 0 : pages.length - 1);
-    assert(() {
-      debugPrint('[ReaderJump] targetPage=$initialGlobalPage pages=${pages.length}');
-      return true;
-    }());
     notifyListeners();
     return initialGlobalPage;
   }

@@ -151,15 +151,6 @@ class _ReaderPageState extends State<ReaderPage> {
       final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
       final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
 
-      assert(() {
-        final chapStart = widget.controller.chapterStartOffsetAt(chapterIndex);
-        debugPrint(
-          '[ReaderPersist] page=$_currentPageIndex seg=${ref.segmentIndex} pageInSeg=${ref.pageInSegment} '
-          'pos=${ref.pageStartOffset} chap=$chapterIndex chapStart=$chapStart diff=${ref.pageStartOffset - chapStart}',
-        );
-        return true;
-      }());
-
       _currentChapterIndex = chapterIndex;
 
       // 更新小说阅读进度
@@ -210,14 +201,6 @@ class _ReaderPageState extends State<ReaderPage> {
       if (novel.durChapterPos != null) {
         _startByteOffset = novel.durChapterPos;
       }
-
-      assert(() {
-        debugPrint(
-          '[ReaderInit] saved currentPageIndex=${novel.currentPageIndex} durChapterIndex=${novel.durChapterIndex} '
-          'durChapterPage=${novel.durChapterPage} durChapterPos=${novel.durChapterPos} currentChapter=${novel.currentChapter}',
-        );
-        return true;
-      }());
 
       if (novel.durChapterIndex != null) {
         _startSegmentIndex = novel.durChapterIndex!;
