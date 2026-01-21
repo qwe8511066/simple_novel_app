@@ -4,6 +4,7 @@ import '../providers/novel_provider.dart';
 import '../utils/statusBarStyle.dart';
 import 'book_shelf_page.dart';
 import 'settings_page.dart';
+import 'tts_test_page.dart';
 import '../components/novel_import_button.dart';
 
 /// 底部标签页（书架 + 设置）
@@ -17,11 +18,15 @@ class TabsScreen extends StatefulWidget {
 class _TabsScreenState extends State<TabsScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _pages = [const BookshelfPage(), const SettingsPage()];
+  final List<Widget> _pages = [
+    const BookshelfPage(),
+    const SettingsPage(),
+    const TtsTestPage(),
+  ];
 
-  final List<String> _titles = ['我的书架', '设置'];
+  final List<String> _titles = ['我的书架', '设置', 'TTS'];
 
-  final List<IconData> _icons = [Icons.book, Icons.settings];
+  final List<IconData> _icons = [Icons.book, Icons.settings, Icons.record_voice_over];
 
   @override
   Widget build(BuildContext context) {

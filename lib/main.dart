@@ -1,6 +1,6 @@
-import 'package:app/pages/reader/reader_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:app/pages/reader/reader_controller.dart';
 import 'providers/novel_provider.dart';
 import 'pages/tabs_screen.dart';
 import 'pages/reader/reader_page.dart';
@@ -8,7 +8,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'utils/smoothSlideTransitionBuilder.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(
     ChangeNotifierProvider(
       create: (context) => NovelProvider(),
@@ -40,6 +41,11 @@ class _MyAppState extends State<MyApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<NovelProvider>(context, listen: false).init();
     });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   @override
