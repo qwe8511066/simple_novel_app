@@ -269,13 +269,18 @@ class _BookshelfPageState extends State<BookshelfPage> {
               child: InkWell(
                 onTap: () {
                   // 导航到阅读器页面
+                  final hasSavedProgress =
+                      novel.durChapterPos != null ||
+                      novel.durChapterIndex != null ||
+                      novel.durChapterPage != null;
+
                   Navigator.pushNamed(
                     context,
                     '/reader',
                     arguments: {
                       'novelId': novel.id,
                       'novelTitle': novel.title,
-                      'chapterIndex': novel.currentChapter ?? 0,
+                      if (!hasSavedProgress) 'chapterIndex': novel.currentChapter ?? 0,
                     },
                   );
                 },

@@ -5,6 +5,8 @@ class Novel {
   final String coverUrl;
   final int chapterCount;
   final int lastUpdateTime;
+  final int? importTime;
+  final int? lastReadTime;
   final String lastChapterTitle;
   final int? currentChapter;
   final double? scrollProgress;
@@ -21,6 +23,8 @@ class Novel {
     required this.coverUrl,
     required this.chapterCount,
     required this.lastUpdateTime,
+    this.importTime,
+    this.lastReadTime,
     required this.lastChapterTitle,
     this.currentChapter,
     this.scrollProgress,
@@ -38,6 +42,8 @@ class Novel {
       coverUrl: json['coverUrl'] as String,
       chapterCount: json['chapterCount'] as int,
       lastUpdateTime: json['lastUpdateTime'] as int,
+      importTime: json['importTime'] as int?,
+      lastReadTime: json['lastReadTime'] as int?,
       lastChapterTitle: json['lastChapterTitle'] as String,
       currentChapter: json['currentChapter'] as int?,
       scrollProgress: (json['scrollProgress'] as num?)?.toDouble(),
@@ -56,6 +62,8 @@ class Novel {
       'coverUrl': coverUrl,
       'chapterCount': chapterCount,
       'lastUpdateTime': lastUpdateTime,
+      'importTime': importTime,
+      'lastReadTime': lastReadTime,
       'lastChapterTitle': lastChapterTitle,
       'currentChapter': currentChapter,
       'scrollProgress': scrollProgress,
@@ -73,6 +81,8 @@ class Novel {
     String? coverUrl,
     int? chapterCount,
     int? lastUpdateTime,
+    int? importTime,
+    int? lastReadTime,
     String? lastChapterTitle,
     int? currentChapter,
     double? scrollProgress,
@@ -87,6 +97,8 @@ class Novel {
       coverUrl: coverUrl ?? this.coverUrl,
       chapterCount: chapterCount ?? this.chapterCount,
       lastUpdateTime: lastUpdateTime ?? this.lastUpdateTime,
+      importTime: importTime ?? this.importTime,
+      lastReadTime: lastReadTime ?? this.lastReadTime,
       lastChapterTitle: lastChapterTitle ?? this.lastChapterTitle,
       currentChapter: currentChapter ?? this.currentChapter,
       scrollProgress: scrollProgress ?? this.scrollProgress,

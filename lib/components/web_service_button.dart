@@ -214,12 +214,14 @@ class _WebServiceButtonState extends State<WebServiceButton> {
         await file.writeAsString(content);
 
         // 上传成功后，创建Novel对象并添加到书架
+        final now = DateTime.now().millisecondsSinceEpoch;
         final novel = Novel(
         id: filename,
         title: filename.replaceAll('.txt', ''),
         coverUrl: '',
         chapterCount: 1, // 简单处理，将整个文件视为一章
-        lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+        lastUpdateTime: now,
+        importTime: now,
         lastChapterTitle: '第一章',
       );
 

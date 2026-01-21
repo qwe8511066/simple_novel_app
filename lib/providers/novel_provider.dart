@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -172,6 +173,8 @@ class NovelProvider with ChangeNotifier {
         debugPrint('加载小说元数据失败: $e');
       }
     }
+
+    _sortNovels();
     
     notifyListeners();
   }
@@ -278,12 +281,14 @@ class NovelProvider with ChangeNotifier {
         final title = id.replaceAll('.txt', '');
         
         if (!_favoriteNovels.any((n) => n.id == id)) {
+          final importTime = file.lastModifiedSync().millisecondsSinceEpoch;
           final novel = Novel(
             id: id,
             title: title,
             coverUrl: '',
             chapterCount: 1,
             lastUpdateTime: file.lastModifiedSync().millisecondsSinceEpoch,
+            importTime: importTime,
             lastChapterTitle: '第一章',
           );
           
@@ -306,11 +311,14 @@ class NovelProvider with ChangeNotifier {
   void addToFavorites(Novel novel) {
     if (!_favoriteNovels.any((n) => n.id == novel.id)) {
       // 设置上传时间为当前时间
+      final now = DateTime.now().millisecondsSinceEpoch;
       final updatedNovel = novel.copyWith(
-        lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+        lastUpdateTime: now,
+        importTime: novel.importTime ?? now,
       );
       _favoriteNovels.add(updatedNovel);
       _sortNovels();
+      _saveNovelsMetadata();
       notifyListeners();
     }
   }
@@ -463,11 +471,28 @@ class NovelProvider with ChangeNotifier {
   }
 
   /// 对小说列表进行排序
-  /// 最新上传的在前面，然后按最近的阅读时间排序
+  /// 最近变化(阅读/导入)置顶
   void _sortNovels() {
     _favoriteNovels.sort((a, b) {
-      // 按lastUpdateTime降序排序，最新的在前面
-      return b.lastUpdateTime.compareTo(a.lastUpdateTime);
+      final aImport = a.importTime ?? a.lastUpdateTime;
+      final bImport = b.importTime ?? b.lastUpdateTime;
+
+      final aRead = a.lastReadTime;
+      final bRead = b.lastReadTime;
+
+      final aActivity = (aRead == null) ? aImport : (aImport > aRead ? aImport : aRead);
+      final bActivity = (bRead == null) ? bImport : (bImport > bRead ? bImport : bRead);
+
+      // 1) 最近变化时间倒序
+      final activityCmp = bActivity.compareTo(aActivity);
+      if (activityCmp != 0) return activityCmp;
+
+      // 2) 兜底按导入时间倒序
+      final importCmp = bImport.compareTo(aImport);
+      if (importCmp != 0) return importCmp;
+
+      // 3) 最后兜底按标题，保证排序稳定
+      return a.title.compareTo(b.title);
     });
   }
   
@@ -486,6 +511,7 @@ class NovelProvider with ChangeNotifier {
     final index = _favoriteNovels.indexWhere((n) => n.id == novel.id);
     if (index != -1) {
       _favoriteNovels[index] = novel;
+      _sortNovels();
       await _saveNovelsMetadata();
       notifyListeners();
     }

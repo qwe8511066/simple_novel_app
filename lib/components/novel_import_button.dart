@@ -106,12 +106,14 @@ class NovelImportButton extends StatelessWidget {
         await targetFile.writeAsString(content);
         final title = await ChapterUtils.normalizeTitle(fileName.replaceAll('.txt', ''));
         // 创建Novel对象并添加到书架
+        final now = DateTime.now().millisecondsSinceEpoch;
         final novel = Novel(
           id: fileName,
               title: title,
               coverUrl: '',
               chapterCount: 1,
-              lastUpdateTime: DateTime.now().millisecondsSinceEpoch,
+              lastUpdateTime: now,
+              importTime: now,
               lastChapterTitle: '第一章',
         );
 

@@ -156,6 +156,7 @@ class _ReaderPageState extends State<ReaderPage> {
       // 更新小说阅读进度
       _novelProvider.updateNovelProgress(
         novel.copyWith(
+          lastReadTime: DateTime.now().millisecondsSinceEpoch,
           currentPageIndex: _currentPageIndex,
           currentChapter: chapterIndex,
           lastChapterTitle: chapterTitle.isNotEmpty ? chapterTitle : novel.lastChapterTitle,
