@@ -20,6 +20,9 @@ class BookshelfPage extends StatefulWidget {
 class _BookshelfPageState extends State<BookshelfPage> {
   // 用于跟踪已经加载过章节的小说ID，避免重复加载
   final Set<String> _loadedNovelIds = {};
+
+  // 用于跟踪正在加载章节的小说ID，避免并发重复请求
+  final Set<String> _loadingNovelIds = {};
   
   // 用于跟踪和管理异步任务，确保页面销毁时能正确清理
   final List<Future<void>> _asyncTasks = [];
@@ -48,14 +51,21 @@ class _BookshelfPageState extends State<BookshelfPage> {
   void _loadNovelChapters() {
     final novelProvider = Provider.of<NovelProvider>(context, listen: false);
     final favorites = novelProvider.favoriteNovels;
+
+    // 书架发生变更（删除/重新导入）时，清理缓存，确保同名小说重新导入后能重新加载章节
+    final favoriteIds = favorites.map((e) => e.id).toSet();
+    _loadedNovelIds.retainAll(favoriteIds);
+    _loadingNovelIds.retainAll(favoriteIds);
     
     // 过滤出需要加载章节的小说
-    final novelsToLoad = favorites.where((novel) => !_loadedNovelIds.contains(novel.id)).toList();
+    final novelsToLoad = favorites
+        .where((novel) => !_loadedNovelIds.contains(novel.id) && !_loadingNovelIds.contains(novel.id))
+        .toList();
     
     // 逐个处理小说，添加延迟避免阻塞
     for (int i = 0; i < novelsToLoad.length; i++) {
       final novel = novelsToLoad[i];
-      _loadedNovelIds.add(novel.id);
+      _loadingNovelIds.add(novel.id);
       
       // 为每个小说添加递增的延迟，避免同时启动所有任务
       final task = Future.delayed(Duration(milliseconds: i * 500), () async {
@@ -73,14 +83,19 @@ class _BookshelfPageState extends State<BookshelfPage> {
           if (chapters.isNotEmpty && novel.chapterCount != chapters.length) {
             final updatedNovel = novel.copyWith(chapterCount: chapters.length);
             novelProvider.updateNovel(updatedNovel);
-            
-            // 更新本地存储
-            await ChapterUtils.updateNovelChapterCount(updatedNovel, chapters);
+          }
+
+          // 只有在成功拿到章节（非空）时，才认为“加载完成”。
+          // 如果为空（例如 txt 被删除/尚未写入完成），允许后续重试。
+          if (chapters.isNotEmpty) {
+            _loadedNovelIds.add(novel.id);
           }
         } catch (e) {
           if (mounted) {
             print('处理小说章节失败 (${novel.title}): $e');
           }
+        } finally {
+          _loadingNovelIds.remove(novel.id);
         }
       });
       

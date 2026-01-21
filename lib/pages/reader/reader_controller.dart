@@ -63,10 +63,7 @@ class ReaderController extends ChangeNotifier {
   /// 初始全局页面索引
   int initialGlobalPage = 0;
 
-  /// 章节标题正则表达式
-  /// 用于匹配类似"第1章"、"第100节"、"第两千回"等章节标题格式
-  static final RegExp _chapterRegex =
-      RegExp(r'^第([零一二三四五六七八九十百千万\d]+)(章|节|回|话)[\s:_]*(.*)$');
+  static final RegExp _chapterRegex = RegExp(kChapterTitlePattern);
 
   /// 构造函数
   ReaderController(this.utf8File, {this.novelTitle});

@@ -5,6 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+const String kChapterTitlePattern =
+    r'^第([零一二三四五六七八九十百千万\d]+)(章|节|回|话)[\s:_]*(.*)$';
+
 class TxtChapterIndex {
   final String filePath;
   final int fileLength;
@@ -118,7 +121,7 @@ Future<Map<String, dynamic>> _buildChapterIndexIsolate(Map<String, dynamic> args
   final offsets = <int>[];
   final titles = <String>[];
 
-  final chapterRegex = RegExp(r'^第([零一二三四五六七八九十百千万\d]+)(章|节|回|话)[\s:_]*(.*)$');
+  final chapterRegex = RegExp(kChapterTitlePattern);
 
   try {
     const chunkSize = 64 * 1024;
