@@ -36,6 +36,7 @@ class _ReaderPageState extends State<ReaderPage> {
   PageController? _pageController; // 页面控制器，用于控制PageView的滚动和动画
   int _startSegmentIndex = 0; // 起始分段索引
   int _startPageInSegment = 0; // 分段内的起始页码
+  int? _startByteOffset; // 起始字节偏移，用于精确恢复阅读位置
   bool _initializing = false; // 是否正在初始化
   bool _jumpingChapter = false; // 是否正在跳转到新章节
   int _currentChapterIndex = 0; // 当前章节索引
@@ -55,6 +56,7 @@ class _ReaderPageState extends State<ReaderPage> {
 
   Timer? _rePaginateDebounce; // 重新分页的防抖定时器
   String? _lastTypographyKey; // 上次排版配置的唯一标识
+  String? _lastCustomFontPath; // 上次使用的自定义字体路径
 
   /// 处理音量键翻页命令
   Future<void> _handleVolumeCommand(String method) async {
@@ -149,6 +151,15 @@ class _ReaderPageState extends State<ReaderPage> {
       final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
       final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
 
+      assert(() {
+        final chapStart = widget.controller.chapterStartOffsetAt(chapterIndex);
+        debugPrint(
+          '[ReaderPersist] page=$_currentPageIndex seg=${ref.segmentIndex} pageInSeg=${ref.pageInSegment} '
+          'pos=${ref.pageStartOffset} chap=$chapterIndex chapStart=$chapStart diff=${ref.pageStartOffset - chapStart}',
+        );
+        return true;
+      }());
+
       _currentChapterIndex = chapterIndex;
 
       // 更新小说阅读进度
@@ -188,6 +199,7 @@ class _ReaderPageState extends State<ReaderPage> {
     if (widget.startChapterIndex != null) {
       _startSegmentIndex = 0;
       _startPageInSegment = 0;
+      _startByteOffset = null;
       _currentPageIndex = 0;
       return;
     }
@@ -195,20 +207,30 @@ class _ReaderPageState extends State<ReaderPage> {
     // 加载保存的阅读进度
     try {
       final novel = _novelProvider.getNovelById(widget.novelId);
+      if (novel.durChapterPos != null) {
+        _startByteOffset = novel.durChapterPos;
+      }
+
+      assert(() {
+        debugPrint(
+          '[ReaderInit] saved currentPageIndex=${novel.currentPageIndex} durChapterIndex=${novel.durChapterIndex} '
+          'durChapterPage=${novel.durChapterPage} durChapterPos=${novel.durChapterPos} currentChapter=${novel.currentChapter}',
+        );
+        return true;
+      }());
+
       if (novel.durChapterIndex != null) {
         _startSegmentIndex = novel.durChapterIndex!;
       }
       if (novel.durChapterPage != null) {
         _startPageInSegment = novel.durChapterPage!;
       }
+
       if ((novel.durChapterIndex == null || novel.durChapterPage == null) &&
+          _startByteOffset == null &&
           novel.currentPageIndex != null &&
           novel.currentPageIndex! > 0) {
         _currentPageIndex = novel.currentPageIndex!;
-      }
-
-      if (novel.currentChapter != null) {
-        _currentChapterIndex = novel.currentChapter!;
       }
     } catch (_) {
       // 忽略加载进度时的错误
@@ -326,9 +348,6 @@ class _ReaderPageState extends State<ReaderPage> {
     });
   }
 
-  // 记录上一次的自定义字体路径，避免重复加载
-  String? _lastCustomFontPath;
-  
   /// 加载自定义字体
   Future<void> _loadCustomFont(String fontPath) async {
     // 如果字体路径未变化，无需重新加载
@@ -417,6 +436,23 @@ class _ReaderPageState extends State<ReaderPage> {
                           if (widget.startChapterIndex != null) {
                             // 如果指定了起始章节，跳转到该章节
                             await _jumpToChapter(widget.startChapterIndex!);
+                          } else if (_startByteOffset != null) {
+                            final targetPage = await widget.controller.jumpToByteOffset(
+                              _startByteOffset!,
+                              contentSize,
+                              textStyle,
+                              paragraphSpacing: novelProvider.paragraphSpacing,
+                            );
+                            if (!mounted) return;
+                            _pageController?.dispose();
+                            _pageController = PageController(initialPage: targetPage);
+                            setState(() {
+                              _currentPageIndex = targetPage;
+                              _currentChapterIndex = widget.controller.chapterIndexAtOffset(
+                                widget.controller.pageRefAt(targetPage).pageStartOffset,
+                              );
+                              _ready = true;
+                            });
                           } else {
                             // 加载初始阅读内容
                             await widget.controller.loadInitial(
@@ -452,25 +488,21 @@ class _ReaderPageState extends State<ReaderPage> {
 
                   return Consumer<NovelProvider>(
                     builder: (context, novelProvider, child) {
-                      // 根据设置创建文本样式，避免不必要的FontLoader重建
                       final textStyle = _buildReaderTextStyle(novelProvider);
-                       
+
                       return AnimatedBuilder(
                         animation: widget.controller,
                         builder: (context, _) {
-                          // 创建或复用页面控制器
                           final pageController = _pageController ??= PageController(
-                            initialPage: novelStartPage(widget.controller, _currentPageIndex)
+                            initialPage: novelStartPage(widget.controller, _currentPageIndex),
                           );
 
                           return GestureDetector(
                             behavior: HitTestBehavior.translucent,
-                            // 点击屏幕显示/隐藏UI
                             onTap: () {
                               _updateOverlayState(showUI: !_showUIOverlay);
                             },
                             child: Container(
-                              // 设置背景颜色或图片
                               decoration: BoxDecoration(
                                 color: novelProvider.readerBackgroundImage == null
                                     ? novelProvider.readerBackgroundColor
@@ -486,44 +518,17 @@ class _ReaderPageState extends State<ReaderPage> {
                               ),
                               child: PageView.builder(
                                 controller: pageController,
-                                itemCount: widget.controller.pages.length, // 总页数
-                                physics: _getPageViewPhysics(novelProvider.readerTurnAnimation), // 根据翻页动画设置物理属性
+                                itemCount: widget.controller.pages.length,
+                                physics: _getPageViewPhysics(novelProvider.readerTurnAnimation),
                                 onPageChanged: (index) {
-                                  Future<void> handleIndex(int effectiveIndex) async {
-                                    // 确保当前页和下一页已加载
-                                    final contentSize = _contentSize(c, novelProvider);
-                                    widget.controller.ensureMoreIfNeeded(
-                                      effectiveIndex,
-                                      contentSize,
-                                      textStyle,
-                                      paragraphSpacing: novelProvider.paragraphSpacing,
-                                    );
+                                  final contentSize = _contentSize(c, novelProvider);
+                                  widget.controller.ensureMoreIfNeeded(
+                                    index,
+                                    contentSize,
+                                    textStyle,
+                                    paragraphSpacing: novelProvider.paragraphSpacing,
+                                  );
 
-                                    // 获取当前页引用信息
-                                    final ref = widget.controller.pageRefAt(effectiveIndex);
-                                    try {
-                                      // 更新阅读进度
-                                      final novel = _novelProvider.getNovelById(widget.novelId);
-                                      final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
-                                      final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
-                                      _novelProvider.updateNovelProgress(
-                                        novel.copyWith(
-                                          currentPageIndex: effectiveIndex,
-                                          currentChapter: chapterIndex,
-                                          lastChapterTitle: chapterTitle.isNotEmpty
-                                              ? chapterTitle
-                                              : novel.lastChapterTitle,
-                                          durChapterIndex: ref.segmentIndex,
-                                          durChapterPage: ref.pageInSegment,
-                                          durChapterPos: ref.pageStartOffset,
-                                        ),
-                                      );
-                                    } catch (_) {
-                                      // 忽略更新进度时的错误
-                                    }
-                                  }
-
-                                  // 更新当前页码和章节索引
                                   setState(() {
                                     _currentPageIndex = index;
                                     _currentChapterIndex = widget.controller.chapterIndexAtOffset(
@@ -531,35 +536,12 @@ class _ReaderPageState extends State<ReaderPage> {
                                     );
                                   });
 
-                                  // 确保当前页的前几页已加载
-                                  widget.controller
-                                      .ensurePreviousIfNeeded(
-                                        index,
-                                        _contentSize(c, novelProvider),
-                                        textStyle,
-                                        paragraphSpacing: novelProvider.paragraphSpacing,
-                                      )
-                                      .then((added) {
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
                                     if (!mounted) return;
-
-                                    // 如果添加了新的前页，调整当前页码
-                                    final effectiveIndex = index + added;
-                                    if (added > 0) {
-                                      final pc = _pageController;
-                                      if (pc != null && pc.hasClients) {
-                                        pc.jumpToPage(effectiveIndex);
-                                      }
-                                      setState(() {
-                                        _currentPageIndex = effectiveIndex;
-                                      });
-                                    }
-
-                                    // 处理页码变化
-                                    handleIndex(effectiveIndex);
+                                    _persistProgress();
                                   });
                                 },
                                 itemBuilder: (_, i) {
-                                  // 构建页面内容
                                   final page = Padding(
                                     padding: EdgeInsets.fromLTRB(
                                       novelProvider.readerPaddingLeft,
@@ -567,16 +549,13 @@ class _ReaderPageState extends State<ReaderPage> {
                                       novelProvider.readerPaddingRight,
                                       novelProvider.readerPaddingBottom,
                                     ),
-                                    child: SingleChildScrollView(
-                                      child: Text(
-                                        widget.controller.pages[i].join('\n'), // 页面文本内容
-                                        style: textStyle, // 文本样式
-                                      ),
+                                    child: Text(
+                                      widget.controller.pages[i].join('\n'),
+                                      style: textStyle,
                                     ),
                                   );
 
-                                  // 应用翻页动画效果
-                                    return ReaderTurnEffects.wrap(
+                                  return ReaderTurnEffects.wrap(
                                     animationName: novelProvider.readerTurnAnimation,
                                     controller: pageController,
                                     index: i,
@@ -603,8 +582,16 @@ class _ReaderPageState extends State<ReaderPage> {
                     Navigator.pop(context);
                   },
                   onCatalog: () {
-                    // 显示目录
-                    _updateOverlayState(showUI: false, showCatalog: true);
+                    _updateOverlayState(showUI: false);
+                    WidgetsBinding.instance.addPostFrameCallback((_) async {
+                      await widget.controller.ensureChapterIndexLoaded();
+                      if (!mounted) return;
+                      final ref = widget.controller.pageRefAt(_currentPageIndex);
+                      setState(() {
+                        _currentChapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+                      });
+                      await _updateOverlayState(showCatalog: true);
+                    });
                   },
                   onReadAloud: () {
                     // 朗读功能（待实现）
@@ -711,6 +698,7 @@ class _ReaderPageState extends State<ReaderPage> {
     // 如果控制器指定了初始全局页码，则使用该页码
     if (controller.initialGlobalPage > 0) return controller.initialGlobalPage;
     // 否则使用备用页码
-    return fallbackPage;
+    if (controller.pages.isEmpty) return 0;
+    return fallbackPage.clamp(0, controller.pages.length - 1);
   }
 }

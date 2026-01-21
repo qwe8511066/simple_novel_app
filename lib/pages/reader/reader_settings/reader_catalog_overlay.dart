@@ -38,13 +38,14 @@ class _ReaderCatalogOverlayState extends State<ReaderCatalogOverlay> {
 
   void _scrollToCurrentChapter() {
     if (!_scrollController.hasClients) return;
-    if (widget.currentChapterIndex < 0 || widget.currentChapterIndex >= widget.chapterTitles.length) {
-      return;
-    }
+    final targetListIndex = _filteredChapterTitles.indexWhere(
+      (e) => (e['index'] as int?) == widget.currentChapterIndex,
+    );
+    if (targetListIndex < 0) return;
 
     const double itemHeight = 52.0;
     final double viewportHeight = _scrollController.position.viewportDimension;
-    double scrollPosition = widget.currentChapterIndex * itemHeight - (viewportHeight / 2) + (itemHeight / 2);
+    double scrollPosition = targetListIndex * itemHeight - (viewportHeight / 2) + (itemHeight / 2);
     scrollPosition = scrollPosition < 0 ? 0 : scrollPosition;
     final maxScrollExtent = _scrollController.position.maxScrollExtent;
     scrollPosition = scrollPosition > maxScrollExtent ? maxScrollExtent : scrollPosition;
