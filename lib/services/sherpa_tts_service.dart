@@ -30,7 +30,7 @@ class SherpaTtsService {
   Future<void> _copyAssetDirToDisk({
     required String assetDirPrefix,
     required String destDirPath,
-    bool forceCopy = true,
+    bool forceCopy = false,
   }) async {
     final destDir = Directory(destDirPath);
     if (!await destDir.exists()) {
@@ -239,13 +239,13 @@ class SherpaTtsService {
     }
 
     try {
-      print('开始合成文本: $text');
+      final normalizedText = _normalizeNumbersForZh(text);
+      print('开始合成文本: $normalizedText');
 
-      // 使用TTS生成音频
       final audio = _tts!.generate(
-        text: text,
-        sid: sid, // 说话人ID
-        speed: speed, // 语速
+        text: normalizedText,
+        sid: sid,
+        speed: speed,
       );
 
       _lastSampleRate = audio.sampleRate;
@@ -260,6 +260,108 @@ class SherpaTtsService {
       print('语音合成失败: $e');
       return null;
     }
+  }
+
+  String _normalizeNumbersForZh(String input) {
+    if (input.isEmpty) return input;
+
+    String _toAsciiDigits(String s) {
+      final b = StringBuffer();
+      for (final r in s.runes) {
+        if (r >= 0xFF10 && r <= 0xFF19) {
+          b.writeCharCode(0x30 + (r - 0xFF10));
+        } else {
+          b.writeCharCode(r);
+        }
+      }
+      return b.toString();
+    }
+
+    final s = _toAsciiDigits(input);
+
+    return s.replaceAllMapped(RegExp(r'\d+(?:\.\d+)?'), (m) {
+      final token = m.group(0) ?? '';
+      if (token.isEmpty) return token;
+      if (token.contains('.')) {
+        final parts = token.split('.');
+        final intPart = parts.isNotEmpty ? parts[0] : '';
+        final fracPart = parts.length > 1 ? parts[1] : '';
+        final head = _intToZh(intPart);
+        final tail = fracPart.split('').map(_digitToZh).join();
+        if (tail.isEmpty) return head;
+        return '$head点$tail';
+      }
+      return _intToZh(token);
+    });
+  }
+
+  String _digitToZh(String d) {
+    switch (d) {
+      case '0':
+        return '零';
+      case '1':
+        return '一';
+      case '2':
+        return '二';
+      case '3':
+        return '三';
+      case '4':
+        return '四';
+      case '5':
+        return '五';
+      case '6':
+        return '六';
+      case '7':
+        return '七';
+      case '8':
+        return '八';
+      case '9':
+        return '九';
+      default:
+        return d;
+    }
+  }
+
+  String _intToZh(String digits) {
+    if (digits.isEmpty) return digits;
+
+    final clean = digits.replaceFirst(RegExp(r'^0+'), '');
+    if (clean.isEmpty) return '零';
+
+    if (clean.length > 4) {
+      return clean.split('').map(_digitToZh).join();
+    }
+
+    final n = int.tryParse(clean);
+    if (n == null) {
+      return clean.split('').map(_digitToZh).join();
+    }
+
+    if (n < 10) return _digitToZh(clean);
+
+    final units = ['', '十', '百', '千'];
+    final ds = clean.split('').map((e) => int.parse(e)).toList(growable: false);
+    final len = ds.length;
+    final b = StringBuffer();
+    var zeroPending = false;
+    for (var i = 0; i < len; i++) {
+      final digit = ds[i];
+      final pos = len - 1 - i;
+      if (digit == 0) {
+        zeroPending = true;
+        continue;
+      }
+      if (zeroPending && b.isNotEmpty) {
+        b.write('零');
+      }
+      zeroPending = false;
+
+      if (!(digit == 1 && pos == 1 && b.isEmpty)) {
+        b.write(_digitToZh(digit.toString()));
+      }
+      b.write(units[pos]);
+    }
+    return b.toString();
   }
 
   /// 释放资源

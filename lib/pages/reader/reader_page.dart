@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'reader_controller.dart';
 import '../../providers/novel_provider.dart';
+import '../../services/audio_player_service.dart';
+import '../../services/sherpa_tts_service.dart';
 import '../../utils/statusBarStyle.dart';
 import '../../utils/volume_key_controller.dart';
 import '../../utils/reader_turn_animations.dart';
-import './reader_settings/reader_ui_overlay.dart';
+import './reader_settings/reader_uI_overlay.dart';
 import './reader_settings/reader_catalog_overlay.dart';
 import './reader_settings/reader_settings_overlay.dart';
 
@@ -57,6 +59,17 @@ class _ReaderPageState extends State<ReaderPage> {
   Timer? _rePaginateDebounce; // 重新分页的防抖定时器
   String? _lastTypographyKey; // 上次排版配置的唯一标识
   String? _lastCustomFontPath; // 上次使用的自定义字体路径
+
+  final SherpaTtsService _ttsService = SherpaTtsService();
+  final AudioPlayerService _audioPlayerService = AudioPlayerService();
+  bool _ttsInitialized = false;
+
+  bool _isReading = false;
+  int _readingPageIndex = -1;
+  int _readingParagraphIndex = -1;
+  int _readingSessionId = 0;
+  final ValueNotifier<int> _readingHighlightTick = ValueNotifier<int>(0);
+  Future<void>? _readingTask;
 
   /// 处理音量键翻页命令
   Future<void> _handleVolumeCommand(String method) async {
@@ -225,6 +238,12 @@ class _ReaderPageState extends State<ReaderPage> {
   void dispose() {
     // 取消防抖定时器
     _rePaginateDebounce?.cancel();
+
+    _stopReading();
+    _ttsService.dispose();
+    _audioPlayerService.dispose();
+    _readingHighlightTick.dispose();
+
     // 保存当前进度
     _persistProgress();
     // 释放页面控制器
@@ -234,6 +253,116 @@ class _ReaderPageState extends State<ReaderPage> {
     VolumeKeyController.setVolumeKeysEnabled(false);
     
     super.dispose();
+  }
+
+  Future<bool> _ensureTtsInitialized() async {
+    if (_ttsInitialized) return true;
+    final ok = await _ttsService.initialize();
+    _ttsInitialized = ok;
+    return ok;
+  }
+
+  Future<void> _stopReading() async {
+    if (!_isReading && !_audioPlayerService.isPlaying) return;
+    _readingSessionId++;
+    _isReading = false;
+    _readingPageIndex = -1;
+    _readingParagraphIndex = -1;
+    _readingHighlightTick.value++;
+    await _audioPlayerService.stop();
+
+    // Wait for any in-flight synthesis loop to observe session change and exit.
+    final task = _readingTask;
+    if (task != null) {
+      try {
+        await task;
+      } catch (_) {
+        // Ignore; the important part is preventing overlapping native calls.
+      } finally {
+        if (identical(_readingTask, task)) {
+          _readingTask = null;
+        }
+      }
+    }
+  }
+
+  List<String> _currentPageParagraphs(int pageIndex) {
+    if (pageIndex < 0 || pageIndex >= widget.controller.pages.length) return const [];
+
+    String _sanitize(String s) {
+      // Avoid some edge cases that can crash native eSpeak voice selection.
+      // Keep it simple: remove BOM and collapse whitespace.
+      return s
+          .replaceAll('\uFEFF', '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    final out = <String>[];
+    for (final line in widget.controller.pages[pageIndex]) {
+      final t = _sanitize(line);
+      if (t.isEmpty) continue;
+      // Skip ultra-short fragments (often punctuation-only) to reduce risk.
+      if (t.runes.length <= 1) continue;
+      out.add(t);
+    }
+    return out;
+  }
+
+  Future<void> _startReadingPage(int pageIndex) async {
+    // Ensure no overlapping synthesis with a previous session.
+    await _stopReading();
+
+    final sessionId = ++_readingSessionId;
+    _isReading = true;
+    _readingPageIndex = pageIndex;
+    _readingParagraphIndex = -1;
+    _readingHighlightTick.value++;
+
+    _readingTask = Future<void>(() async {
+      final paragraphs = _currentPageParagraphs(pageIndex);
+      if (paragraphs.isEmpty) return;
+
+      debugPrint('TTS阅读页开始朗读: page=$pageIndex, 段落数=${paragraphs.length}, 首段="${paragraphs.first}"');
+
+      final ok = await _ensureTtsInitialized();
+      if (!ok) return;
+
+      final novelProvider = Provider.of<NovelProvider>(context, listen: false);
+      final maxSid = (_ttsService.numSpeakers > 0) ? (_ttsService.numSpeakers - 1) : 0;
+      final sid = novelProvider.ttsSid.clamp(0, maxSid);
+      final speed = novelProvider.ttsSpeed;
+
+      for (var i = 0; i < paragraphs.length; i++) {
+        if (!mounted) return;
+        if (sessionId != _readingSessionId) return;
+
+        _readingParagraphIndex = i;
+        _readingHighlightTick.value++;
+
+        final audioData = await _ttsService.synthesizeText(
+          paragraphs[i],
+          sid: sid,
+          speed: speed,
+        );
+        if (sessionId != _readingSessionId) return;
+        if (audioData == null || audioData.isEmpty) continue;
+
+        await _audioPlayerService.playPcmAudioAndWait(
+          audioData,
+          sampleRate: _ttsService.lastSampleRate,
+        );
+      }
+    }).whenComplete(() {
+      if (!mounted) return;
+      if (sessionId != _readingSessionId) return;
+      _isReading = false;
+      _readingPageIndex = -1;
+      _readingParagraphIndex = -1;
+      _readingHighlightTick.value++;
+    });
+
+    await _readingTask;
   }
 
   /// 构建阅读器的文本样式
@@ -374,6 +503,10 @@ class _ReaderPageState extends State<ReaderPage> {
         body: WillPopScope(
           // 拦截系统返回手势和返回按钮
           onWillPop: () async {
+            if (_isReading || _audioPlayerService.isPlaying) {
+              await _stopReading();
+              return false;
+            }
             if (_showCatalogOverlay) {
               // 隐藏目录弹窗
               _updateOverlayState(showCatalog: false);
@@ -520,6 +653,20 @@ class _ReaderPageState extends State<ReaderPage> {
                                     );
                                   });
 
+                                  if (_isReading || _audioPlayerService.isPlaying) {
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (!mounted) return;
+                                      Future<void>(() async {
+                                        final wasReading = _isReading || _audioPlayerService.isPlaying;
+                                        await _stopReading();
+                                        if (!mounted) return;
+                                        if (wasReading) {
+                                          await _startReadingPage(index);
+                                        }
+                                      });
+                                    });
+                                  }
+
                                   WidgetsBinding.instance.addPostFrameCallback((_) {
                                     if (!mounted) return;
                                     _persistProgress();
@@ -533,12 +680,48 @@ class _ReaderPageState extends State<ReaderPage> {
                                       novelProvider.readerPaddingRight,
                                       novelProvider.readerPaddingBottom,
                                     ),
-                                    child: Text(
-                                      widget.controller.pages[i].join('\n'),
-                                      style: textStyle,
+                                    child: ValueListenableBuilder<int>(
+                                      valueListenable: _readingHighlightTick,
+                                      builder: (context, _, __) {
+                                        final lines = widget.controller.pages[i];
+                                        // 只有当前朗读页才做高亮拼span，其他页保持简单Text以减少开销
+                                        if (!_isReading || _readingPageIndex != i) {
+                                          return Text(lines.join('\n'), style: textStyle);
+                                        }
+
+                                        final themeColor = novelProvider.themeColor;
+                                        final spans = <InlineSpan>[];
+                                        var spokenParagraphIdx = 0;
+
+                                        for (var li = 0; li < lines.length; li++) {
+                                          final raw = lines[li];
+                                          final trimmed = raw.trim();
+                                          final isParagraph = trimmed.isNotEmpty;
+                                          final shouldHighlight =
+                                              isParagraph && spokenParagraphIdx == _readingParagraphIndex;
+
+                                          final spanStyle = shouldHighlight
+                                              ? textStyle.copyWith(color: themeColor)
+                                              : textStyle;
+
+                                          spans.add(TextSpan(text: raw, style: spanStyle));
+                                          if (li != lines.length - 1) {
+                                            spans.add(const TextSpan(text: '\n'));
+                                          }
+
+                                          if (isParagraph) {
+                                            spokenParagraphIdx++;
+                                          }
+                                        }
+
+                                        return RichText(
+                                          text: TextSpan(children: spans),
+                                          textAlign: TextAlign.start,
+                                          textDirection: TextDirection.ltr,
+                                        );
+                                      },
                                     ),
                                   );
-
                                   return ReaderTurnEffects.wrap(
                                     animationName: novelProvider.readerTurnAnimation,
                                     controller: pageController,
@@ -557,40 +740,54 @@ class _ReaderPageState extends State<ReaderPage> {
               ),
               // UI弹窗组件
               if (_showUIOverlay && _ready)
-                ReaderUIOverlay(
-                  novelTitle: novel.title, // 小说标题
-                  currentPage: _currentPageIndex + 1, // 当前页码（从1开始显示）
-                  totalPages: widget.controller.pages.length, // 总页数
-                  onBack: () {
-                    // 返回上一页
-                    Navigator.pop(context);
-                  },
-                  onCatalog: () {
-                    _updateOverlayState(showUI: false);
-                    WidgetsBinding.instance.addPostFrameCallback((_) async {
-                      await widget.controller.ensureChapterIndexLoaded();
-                      if (!mounted) return;
-                      final ref = widget.controller.pageRefAt(_currentPageIndex);
-                      setState(() {
-                        _currentChapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
-                      });
-                      await _updateOverlayState(showCatalog: true);
-                    });
-                  },
-                  onReadAloud: () {
-                    // 朗读功能（待实现）
-                    _updateOverlayState(showUI: false);
-                    print('朗读按钮点击');
-                    // TODO: 实现朗读功能
-                  },
-                  onInterface: () {
-                    // 显示设置
-                    _updateOverlayState(showUI: false, showSettings: true);
-                  },
-                  onClose: () {
-                    // 关闭弹窗
-                    debugPrint('关闭按钮点击');
-                    _updateOverlayState(showUI: false);
+                ValueListenableBuilder<int>(
+                  valueListenable: _readingHighlightTick,
+                  builder: (context, _, __) {
+                    return ReaderUIOverlay(
+                      novelTitle: novel.title, // 小说标题
+                      currentPage: _currentPageIndex + 1, // 当前页码（从1开始显示）
+                      totalPages: widget.controller.pages.length, // 总页数
+                      isReading: _isReading || _audioPlayerService.isPlaying,
+                      onBack: () {
+                        // 返回上一页
+                        _stopReading();
+                        Navigator.pop(context);
+                      },
+                      onCatalog: () {
+                        _updateOverlayState(showUI: false);
+                        WidgetsBinding.instance.addPostFrameCallback((_) async {
+                          await widget.controller.ensureChapterIndexLoaded();
+                          if (!mounted) return;
+                          final ref = widget.controller.pageRefAt(_currentPageIndex);
+                          setState(() {
+                            _currentChapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+                          });
+                          await _updateOverlayState(showCatalog: true);
+                        });
+                      },
+                      onReadAloud: () {
+                        _updateOverlayState(showUI: false);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          Future<void>(() async {
+                            if (_isReading || _audioPlayerService.isPlaying) {
+                              await _stopReading();
+                              return;
+                            }
+                            await _startReadingPage(_currentPageIndex);
+                          });
+                        });
+                      },
+                      onInterface: () {
+                        // 显示设置
+                        _updateOverlayState(showUI: false, showSettings: true);
+                      },
+                      onClose: () {
+                        // 关闭弹窗
+                        debugPrint('关闭按钮点击');
+                        _updateOverlayState(showUI: false);
+                      },
+                    );
                   },
                 ),
               // 目录弹窗组件

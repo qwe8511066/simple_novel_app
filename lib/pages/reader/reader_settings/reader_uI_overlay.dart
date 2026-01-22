@@ -7,6 +7,7 @@ class ReaderUIOverlay extends StatefulWidget {
   final String novelTitle;
   final int currentPage;
   final int totalPages;
+  final bool isReading;
   final VoidCallback onBack;
   final VoidCallback onCatalog;
   final VoidCallback onReadAloud;
@@ -17,6 +18,7 @@ class ReaderUIOverlay extends StatefulWidget {
     required this.novelTitle,
     required this.currentPage,
     required this.totalPages,
+    required this.isReading,
     required this.onBack,
     required this.onCatalog,
     required this.onReadAloud,
@@ -34,6 +36,9 @@ class _ReaderUIOverlayState extends State<ReaderUIOverlay> {
     final novelProvider = Provider.of<NovelProvider>(context);
     final themeColor = novelProvider.themeColor;
     final double statusBarHeight = StatusBarScope.of(context).statusBarHeight;
+
+    final readIcon = widget.isReading ? Icons.stop : Icons.volume_up;
+    final readLabel = widget.isReading ? '停止' : '朗读';
 
     return Material(
       color: Colors.transparent,
@@ -106,7 +111,7 @@ class _ReaderUIOverlayState extends State<ReaderUIOverlay> {
                       children: [
                         // 目录
                         GestureDetector(
-                          onTap: widget.onCatalog,
+                          onTap: null,
                           child: Column(
                             children: [
                               IconButton(
@@ -128,18 +133,15 @@ class _ReaderUIOverlayState extends State<ReaderUIOverlay> {
                         ),
                         // 朗读
                         GestureDetector(
-                          onTap: widget.onReadAloud,
+                          onTap: null,
                           child: Column(
                             children: [
                               IconButton(
-                                icon: const Icon(
-                                  Icons.volume_up,
-                                  color: Colors.white,
-                                ),
+                                icon: Icon(readIcon, color: Colors.white),
                                 onPressed: widget.onReadAloud,
                               ),
-                              const Text(
-                                '朗读',
+                              Text(
+                                readLabel,
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -150,7 +152,7 @@ class _ReaderUIOverlayState extends State<ReaderUIOverlay> {
                         ),
                         // 界面
                         GestureDetector(
-                          onTap: widget.onInterface,
+                          onTap: null,
                           child: Column(
                             children: [
                               IconButton(

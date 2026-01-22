@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
 class AudioPlayerService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
+  StreamSubscription<void>? _completeSub;
 
   /// 播放PCM音频数据
   /// [pcmData] - PCM格式的音频数据
@@ -33,16 +35,67 @@ class AudioPlayerService {
       // 播放临时文件
       await _audioPlayer.play(UrlSource(tempFile.path));
       _isPlaying = true;
-      
-      // 监听播放完成事件
-      _audioPlayer.onPlayerComplete.listen((event) {
+
+      // 监听播放完成事件（仅用于更新状态+清理文件）
+      await _completeSub?.cancel();
+      _completeSub = _audioPlayer.onPlayerComplete.listen((_) {
         _isPlaying = false;
-        // 删除临时文件
-        tempFile.deleteSync();
+        try {
+          if (tempFile.existsSync()) {
+            tempFile.deleteSync();
+          }
+        } catch (_) {}
       });
     } catch (e) {
       print('播放音频失败: $e');
       _isPlaying = false;
+    }
+  }
+
+  /// 播放PCM音频并等待播放完成（用于串行朗读/高亮）
+  Future<void> playPcmAudioAndWait(
+    List<double> pcmData, {
+    int sampleRate = 24000,
+    int bitDepth = 16,
+    int channels = 1,
+  }) async {
+    // 停止当前播放
+    await stop();
+
+    // 将double格式的PCM数据转换为16位整数
+    final Int16List int16Data = convertToInt16(pcmData);
+
+    // 创建WAV文件头
+    final Uint8List wavData = createWavFile(int16Data, sampleRate, bitDepth, channels);
+
+    // 将WAV数据保存到临时文件
+    final File tempFile = await saveToTempFile(wavData);
+
+    final completer = Completer<void>();
+
+    await _completeSub?.cancel();
+    _completeSub = _audioPlayer.onPlayerComplete.listen((_) {
+      _isPlaying = false;
+      try {
+        if (tempFile.existsSync()) {
+          tempFile.deleteSync();
+        }
+      } catch (_) {}
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
+
+    try {
+      await _audioPlayer.play(UrlSource(tempFile.path));
+      _isPlaying = true;
+      await completer.future;
+    } catch (e) {
+      _isPlaying = false;
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
+      rethrow;
     }
   }
 
@@ -82,6 +135,8 @@ class AudioPlayerService {
   /// 释放资源
   Future<void> dispose() async {
     try {
+      await _completeSub?.cancel();
+      _completeSub = null;
       await _audioPlayer.dispose();
     } catch (e) {
       print('释放音频资源失败: $e');

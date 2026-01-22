@@ -37,6 +37,10 @@ class NovelProvider with ChangeNotifier {
   String _readerTurnAnimation = '左右翻页'; // 翻页动画：左右翻页、覆盖翻页、仿真翻页
   bool _volumeKeyPageTurning = true; // 音量键翻页开关
   bool _hideStatusBar = true; // 隐藏状态栏开关
+
+  // TTS 设置
+  int _ttsSid = 0;
+  double _ttsSpeed = 1.0;
   /// 获取收藏的小说列表
   List<Novel> get favoriteNovels => _favoriteNovels;
 
@@ -86,6 +90,10 @@ class NovelProvider with ChangeNotifier {
   String get readerTurnAnimation => _readerTurnAnimation;
   bool get volumeKeyPageTurning => _volumeKeyPageTurning;
   bool get hideStatusBar => _hideStatusBar;
+
+  // TTS getters
+  int get ttsSid => _ttsSid;
+  double get ttsSpeed => _ttsSpeed;
   
   /// 初始化 - 加载本地小说和用户配置
   Future<void> init() async {
@@ -162,6 +170,10 @@ class NovelProvider with ChangeNotifier {
     _readerTurnAnimation = prefs.getString('readerTurnAnimation') ?? _readerTurnAnimation;
     _volumeKeyPageTurning = prefs.getBool('volumeKeyPageTurning') ?? _volumeKeyPageTurning;
     _hideStatusBar = prefs.getBool('hideStatusBar') ?? _hideStatusBar;
+
+    // 加载TTS设置
+    _ttsSid = prefs.getInt('ttsSid') ?? _ttsSid;
+    _ttsSpeed = prefs.getDouble('ttsSpeed') ?? _ttsSpeed;
 
     // 加载小说收藏元数据(包含进度)
     final novelsJson = prefs.getString('favoriteNovelsMetadata');
@@ -240,6 +252,10 @@ class NovelProvider with ChangeNotifier {
     await prefs.setString('readerTurnAnimation', _readerTurnAnimation);
     await prefs.setBool('volumeKeyPageTurning', _volumeKeyPageTurning);
     await prefs.setBool('hideStatusBar', _hideStatusBar);
+
+    // 保存TTS设置
+    await prefs.setInt('ttsSid', _ttsSid);
+    await prefs.setDouble('ttsSpeed', _ttsSpeed);
   }
   
   /// 确保小说目录存在
@@ -452,6 +468,20 @@ class NovelProvider with ChangeNotifier {
   /// 设置隐藏状态栏开关
   Future<void> setHideStatusBar(bool enabled) async {
     _hideStatusBar = enabled;
+    await _saveConfig();
+    notifyListeners();
+  }
+
+  /// 设置TTS音色
+  Future<void> setTtsSid(int sid) async {
+    _ttsSid = sid;
+    await _saveConfig();
+    notifyListeners();
+  }
+
+  /// 设置TTS语速
+  Future<void> setTtsSpeed(double speed) async {
+    _ttsSpeed = speed;
     await _saveConfig();
     notifyListeners();
   }
