@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
@@ -12,6 +13,52 @@ class SherpaTtsService {
 
   int get numSpeakers => _tts?.numSpeakers ?? 0;
   int get lastSampleRate => _lastSampleRate;
+
+  Future<List<String>> _listAllAssetKeys() async {
+    // AssetManifest.json tends to be the most universally available format.
+    try {
+      final manifestJson = await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifestMap = json.decode(manifestJson) as Map<String, dynamic>;
+      return manifestMap.keys.toList(growable: false);
+    } catch (_) {
+      // Fall back to the newer AssetManifest API if json is unavailable.
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      return (await manifest.listAssets()).toList(growable: false);
+    }
+  }
+
+  Future<void> _copyAssetDirToDisk({
+    required String assetDirPrefix,
+    required String destDirPath,
+    bool forceCopy = true,
+  }) async {
+    final destDir = Directory(destDirPath);
+    if (!await destDir.exists()) {
+      await destDir.create(recursive: true);
+    }
+
+    final assets = await _listAllAssetKeys();
+    var matched = 0;
+
+    for (final entry in assets) {
+      if (!entry.startsWith(assetDirPrefix)) {
+        continue;
+      }
+
+      matched++;
+
+      final relativePath = entry.substring(assetDirPrefix.length);
+      final outFile = File('$destDirPath/$relativePath');
+
+      if (!forceCopy && await outFile.exists()) continue;
+
+      await outFile.parent.create(recursive: true);
+      final data = await rootBundle.load(entry);
+      await outFile.writeAsBytes(data.buffer.asUint8List());
+    }
+
+    print('已匹配并处理assets目录: $assetDirPrefix, 文件数: $matched');
+  }
 
   /// 初始化TTS服务
   Future<bool> initialize() async {
@@ -41,8 +88,11 @@ class SherpaTtsService {
 
       print('模型文件路径: $modelPath');
 
-      final tokensPath = '${File(modelPath).parent.path}/tokens.txt';
-      final lexiconPath = '${File(modelPath).parent.path}/lexicon.txt';
+      final modelDirPath = File(modelPath).parent.path;
+      final tokensPath = '$modelDirPath/tokens.txt';
+      final lexiconPath = '$modelDirPath/lexicon.txt';
+      final vocoderPath = '$modelDirPath/vocos.onnx';
+      final espeakDataDirPath = '$modelDirPath/espeak-ng-data';
 
       if (!await File(modelPath).exists()) {
         print('模型文件不存在: $modelPath');
@@ -59,13 +109,25 @@ class SherpaTtsService {
         return false;
       }
 
+      if (!await File(vocoderPath).exists()) {
+        print('Vocoder文件不存在: $vocoderPath');
+        return false;
+      }
+
+      if (!await Directory(espeakDataDirPath).exists()) {
+        print('espeak-ng-data目录不存在: $espeakDataDirPath');
+        return false;
+      }
+
       // 创建TTS配置
       final config = OfflineTtsConfig(
         model: OfflineTtsModelConfig(
-          vits: OfflineTtsVitsModelConfig(
-            model: modelPath,
-            lexicon: lexiconPath,
+          matcha: OfflineTtsMatchaModelConfig(
+            acousticModel: modelPath,
+            vocoder: vocoderPath,
             tokens: tokensPath,
+            dataDir: espeakDataDirPath,
+            lexicon: lexiconPath,
           ),
         ),
       );
@@ -98,12 +160,17 @@ class SherpaTtsService {
       final modelDestPath = '${modelsDir.path}/model.onnx';
       final modelFile = File(modelDestPath);
 
+      final vocoderDestPath = '${modelsDir.path}/vocos.onnx';
+      final vocoderFile = File(vocoderDestPath);
+
       // 同样处理tokens文件
       final tokensDestPath = '${modelsDir.path}/tokens.txt';
       final tokensFile = File(tokensDestPath);
 
       final lexiconDestPath = '${modelsDir.path}/lexicon.txt';
       final lexiconFile = File(lexiconDestPath);
+
+      final espeakDataDir = Directory('${modelsDir.path}/espeak-ng-data');
 
       if (!await modelFile.exists()) {
         // 从assets复制模型文件
@@ -114,6 +181,15 @@ class SherpaTtsService {
         print('模型文件已复制到: $modelDestPath');
       } else {
         print('模型文件已存在于: $modelDestPath');
+      }
+
+      if (!await vocoderFile.exists()) {
+        final vocoderAssetPath = 'assets/models/vocos.onnx';
+        final vocoderData = await rootBundle.load(vocoderAssetPath);
+        await vocoderFile.writeAsBytes(vocoderData.buffer.asUint8List());
+        print('Vocoder文件已复制到: $vocoderDestPath');
+      } else {
+        print('Vocoder文件已存在于: $vocoderDestPath');
       }
 
       if (!await tokensFile.exists()) {
@@ -134,6 +210,14 @@ class SherpaTtsService {
         print('Lexicon文件已复制到: $lexiconDestPath');
       } else {
         print('Lexicon文件已存在于: $lexiconDestPath');
+      }
+
+      if (!await espeakDataDir.exists()) {
+        await _copyAssetDirToDisk(
+          assetDirPrefix: 'assets/models/espeak-ng-data/',
+          destDirPath: espeakDataDir.path,
+          forceCopy: false,
+        );
       }
 
       return modelDestPath;
