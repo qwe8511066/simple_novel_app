@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'reader_controller.dart';
@@ -11,6 +12,7 @@ import '../../services/sherpa_tts_service.dart';
 import '../../utils/statusBarStyle.dart';
 import '../../utils/volume_key_controller.dart';
 import '../../utils/reader_turn_animations.dart';
+import 'read_aloud_manager.dart';
 import './reader_settings/reader_uI_overlay.dart';
 import './reader_settings/reader_catalog_overlay.dart';
 import './reader_settings/reader_settings_overlay.dart';
@@ -62,14 +64,157 @@ class _ReaderPageState extends State<ReaderPage> {
 
   final SherpaTtsService _ttsService = SherpaTtsService();
   final AudioPlayerService _audioPlayerService = AudioPlayerService();
-  bool _ttsInitialized = false;
+  late final ReadAloudManager _readAloud;
 
-  bool _isReading = false;
-  int _readingPageIndex = -1;
-  int _readingParagraphIndex = -1;
-  int _readingSessionId = 0;
-  final ValueNotifier<int> _readingHighlightTick = ValueNotifier<int>(0);
-  Future<void>? _readingTask;
+  bool _autoTurningPage = false;
+  bool _userScrollingPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _novelProvider = Provider.of<NovelProvider>(context, listen: false);
+
+    _readAloud = ReadAloudManager(
+      novelProvider: () => Provider.of<NovelProvider>(context, listen: false),
+      ttsService: _ttsService,
+      audioPlayerService: _audioPlayerService,
+      currentPageIndex: () => _currentPageIndex,
+      totalPages: () => widget.controller.pages.length,
+      pageParagraphs: _currentPageParagraphs,
+      turnToPage: (nextPage) async {
+        if (!mounted) return;
+        final pc = _pageController;
+        if (pc == null || !pc.hasClients) return;
+        _autoTurningPage = true;
+        pc.jumpToPage(nextPage);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _autoTurningPage = false;
+        });
+      },
+    );
+
+    if (!_volumeChannelBound) {
+      _volumeChannel.setMethodCallHandler((call) async {
+        await _handleVolumeCommand(call.method);
+      });
+      _volumeChannelBound = true;
+    }
+
+    VolumeKeyController.setVolumeKeysEnabled(true);
+
+    try {
+      final novel = _novelProvider.getNovelById(widget.novelId);
+      if (novel.durChapterPos != null) {
+        _startByteOffset = novel.durChapterPos;
+      }
+      if (novel.durChapterIndex != null) {
+        _startSegmentIndex = novel.durChapterIndex!;
+      }
+      if (novel.durChapterPage != null) {
+        _startPageInSegment = novel.durChapterPage!;
+      }
+      if ((novel.durChapterIndex == null || novel.durChapterPage == null) &&
+          _startByteOffset == null &&
+          novel.currentPageIndex != null &&
+          novel.currentPageIndex! > 0) {
+        _currentPageIndex = novel.currentPageIndex!;
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _rePaginateDebounce?.cancel();
+    _readAloud.dispose();
+    _ttsService.dispose();
+    _audioPlayerService.dispose();
+    _persistProgress();
+    _pageController?.dispose();
+    VolumeKeyController.setVolumeKeysEnabled(false);
+    super.dispose();
+  }
+
+  List<String> _currentPageParagraphs(int pageIndex) {
+    if (pageIndex < 0 || pageIndex >= widget.controller.pages.length) return const [];
+
+    String sanitize(String s) {
+      return s
+          .replaceAll('\uFEFF', '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    final out = <String>[];
+    for (final line in widget.controller.pages[pageIndex]) {
+      final t = sanitize(line);
+      if (t.isEmpty) continue;
+      if (t.runes.length <= 1) continue;
+      out.add(t);
+    }
+    return out;
+  }
+
+  Future<void> _jumpToChapter(int chapterIndex) async {
+    final layoutSize = _lastContentSize;
+    final textStyle = _lastTextStyle;
+    if (layoutSize == null || textStyle == null) return;
+
+    await widget.controller.ensureChapterIndexLoaded();
+    if (_jumpingChapter) return;
+    _jumpingChapter = true;
+
+    try {
+      setState(() {
+        _ready = false;
+      });
+
+      _pageController?.dispose();
+      _pageController = null;
+
+      final byteOffset = widget.controller.chapterStartOffsetAt(chapterIndex);
+      final targetPage = await widget.controller.jumpToByteOffset(
+        byteOffset,
+        layoutSize,
+        textStyle,
+        paragraphSpacing: Provider.of<NovelProvider>(context, listen: false).paragraphSpacing,
+      );
+      if (!mounted) return;
+
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: targetPage);
+      setState(() {
+        _currentPageIndex = targetPage;
+        _currentChapterIndex = chapterIndex;
+        _ready = true;
+      });
+      _persistProgress();
+    } finally {
+      _jumpingChapter = false;
+    }
+  }
+
+  void _persistProgress() {
+    if (!_ready) return;
+    final ref = widget.controller.pageRefAt(_currentPageIndex);
+    try {
+      final novel = _novelProvider.getNovelById(widget.novelId);
+
+      final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
+      final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
+      _currentChapterIndex = chapterIndex;
+      _novelProvider.updateNovelProgress(
+        novel.copyWith(
+          lastReadTime: DateTime.now().millisecondsSinceEpoch,
+          currentPageIndex: _currentPageIndex,
+          currentChapter: chapterIndex,
+          lastChapterTitle: chapterTitle.isNotEmpty ? chapterTitle : novel.lastChapterTitle,
+          durChapterIndex: ref.segmentIndex,
+          durChapterPage: ref.pageInSegment,
+          durChapterPos: ref.pageStartOffset,
+        ),
+      );
+    } catch (_) {}
+  }
 
   /// 处理音量键翻页命令
   Future<void> _handleVolumeCommand(String method) async {
@@ -102,267 +247,6 @@ class _ReaderPageState extends State<ReaderPage> {
         pc.animateToPage(prev, duration: const Duration(milliseconds: 300), curve: curve);
       }
     }
-  }
-
-  /// 跳转到指定章节
-  Future<void> _jumpToChapter(int chapterIndex) async {
-    final layoutSize = _lastContentSize;
-    final textStyle = _lastTextStyle;
-    if (layoutSize == null || textStyle == null) return;
-
-    // 确保章节索引已加载
-    await widget.controller.ensureChapterIndexLoaded();
-
-    // 防止重复跳转
-    if (_jumpingChapter) return;
-    _jumpingChapter = true;
-
-    try {
-      setState(() {
-        _ready = false;
-      });
-      // 释放旧的页面控制器
-      _pageController?.dispose();
-      _pageController = null;
-
-      // 获取章节起始位置
-      final byteOffset = widget.controller.chapterStartOffsetAt(chapterIndex);
-      // 跳转到指定位置
-      final targetPage = await widget.controller.jumpToByteOffset(
-        byteOffset,
-        layoutSize,
-        textStyle,
-        paragraphSpacing: Provider.of<NovelProvider>(context, listen: false).paragraphSpacing,
-      );
-      if (!mounted) return;
-
-      // 创建新的页面控制器
-      _pageController?.dispose();
-      _pageController = PageController(initialPage: targetPage);
-      setState(() {
-        _currentPageIndex = targetPage;
-        _currentChapterIndex = chapterIndex;
-        _ready = true;
-      });
-      // 保存阅读进度
-      _persistProgress();
-    } finally {
-      _jumpingChapter = false;
-    }
-  }
-
-  /// 保存当前阅读进度
-  void _persistProgress() {
-    if (!_ready) return;
-    // 获取当前页面的引用信息
-    final ref = widget.controller.pageRefAt(_currentPageIndex);
-    try {
-      // 获取当前小说信息
-      final novel = _novelProvider.getNovelById(widget.novelId);
-
-      // 获取当前章节索引和标题
-      final chapterIndex = widget.controller.chapterIndexAtOffset(ref.pageStartOffset);
-      final chapterTitle = widget.controller.chapterTitleAtIndex(chapterIndex);
-
-      _currentChapterIndex = chapterIndex;
-
-      // 更新小说阅读进度
-      _novelProvider.updateNovelProgress(
-        novel.copyWith(
-          lastReadTime: DateTime.now().millisecondsSinceEpoch,
-          currentPageIndex: _currentPageIndex,
-          currentChapter: chapterIndex,
-          lastChapterTitle: chapterTitle.isNotEmpty ? chapterTitle : novel.lastChapterTitle,
-          durChapterIndex: ref.segmentIndex,
-          durChapterPage: ref.pageInSegment,
-          durChapterPos: ref.pageStartOffset,
-        ),
-      );
-    } catch (_) {
-      // 忽略保存进度时的错误
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // 获取小说状态管理提供者
-    _novelProvider = Provider.of<NovelProvider>(context, listen: false);
-
-    // 绑定音量键监听通道
-    if (!_volumeChannelBound) {
-      _volumeChannel.setMethodCallHandler((call) async {
-        await _handleVolumeCommand(call.method);
-      });
-      _volumeChannelBound = true;
-    }
-
-    // 进入阅读页面时启用音量键拦截
-    VolumeKeyController.setVolumeKeysEnabled(true);
-
-    // 如果指定了起始章节，重置相关索引
-    if (widget.startChapterIndex != null) {
-      _startSegmentIndex = 0;
-      _startPageInSegment = 0;
-      _startByteOffset = null;
-      _currentPageIndex = 0;
-      return;
-    }
-
-    // 加载保存的阅读进度
-    try {
-      final novel = _novelProvider.getNovelById(widget.novelId);
-      if (novel.durChapterPos != null) {
-        _startByteOffset = novel.durChapterPos;
-      }
-
-      if (novel.durChapterIndex != null) {
-        _startSegmentIndex = novel.durChapterIndex!;
-      }
-      if (novel.durChapterPage != null) {
-        _startPageInSegment = novel.durChapterPage!;
-      }
-
-      if ((novel.durChapterIndex == null || novel.durChapterPage == null) &&
-          _startByteOffset == null &&
-          novel.currentPageIndex != null &&
-          novel.currentPageIndex! > 0) {
-        _currentPageIndex = novel.currentPageIndex!;
-      }
-    } catch (_) {
-      // 忽略加载进度时的错误
-    }
-  }
-
-  @override
-  void dispose() {
-    // 取消防抖定时器
-    _rePaginateDebounce?.cancel();
-
-    _stopReading();
-    _ttsService.dispose();
-    _audioPlayerService.dispose();
-    _readingHighlightTick.dispose();
-
-    // 保存当前进度
-    _persistProgress();
-    // 释放页面控制器
-    _pageController?.dispose();
-    
-    // 离开阅读页面时禁用音量键拦截
-    VolumeKeyController.setVolumeKeysEnabled(false);
-    
-    super.dispose();
-  }
-
-  Future<bool> _ensureTtsInitialized() async {
-    if (_ttsInitialized) return true;
-    final ok = await _ttsService.initialize();
-    _ttsInitialized = ok;
-    return ok;
-  }
-
-  Future<void> _stopReading() async {
-    if (!_isReading && !_audioPlayerService.isPlaying) return;
-    _readingSessionId++;
-    _isReading = false;
-    _readingPageIndex = -1;
-    _readingParagraphIndex = -1;
-    _readingHighlightTick.value++;
-    await _audioPlayerService.stop();
-
-    // Wait for any in-flight synthesis loop to observe session change and exit.
-    final task = _readingTask;
-    if (task != null) {
-      try {
-        await task;
-      } catch (_) {
-        // Ignore; the important part is preventing overlapping native calls.
-      } finally {
-        if (identical(_readingTask, task)) {
-          _readingTask = null;
-        }
-      }
-    }
-  }
-
-  List<String> _currentPageParagraphs(int pageIndex) {
-    if (pageIndex < 0 || pageIndex >= widget.controller.pages.length) return const [];
-
-    String _sanitize(String s) {
-      // Avoid some edge cases that can crash native eSpeak voice selection.
-      // Keep it simple: remove BOM and collapse whitespace.
-      return s
-          .replaceAll('\uFEFF', '')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-    }
-
-    final out = <String>[];
-    for (final line in widget.controller.pages[pageIndex]) {
-      final t = _sanitize(line);
-      if (t.isEmpty) continue;
-      // Skip ultra-short fragments (often punctuation-only) to reduce risk.
-      if (t.runes.length <= 1) continue;
-      out.add(t);
-    }
-    return out;
-  }
-
-  Future<void> _startReadingPage(int pageIndex) async {
-    // Ensure no overlapping synthesis with a previous session.
-    await _stopReading();
-
-    final sessionId = ++_readingSessionId;
-    _isReading = true;
-    _readingPageIndex = pageIndex;
-    _readingParagraphIndex = -1;
-    _readingHighlightTick.value++;
-
-    _readingTask = Future<void>(() async {
-      final paragraphs = _currentPageParagraphs(pageIndex);
-      if (paragraphs.isEmpty) return;
-
-      debugPrint('TTS阅读页开始朗读: page=$pageIndex, 段落数=${paragraphs.length}, 首段="${paragraphs.first}"');
-
-      final ok = await _ensureTtsInitialized();
-      if (!ok) return;
-
-      final novelProvider = Provider.of<NovelProvider>(context, listen: false);
-      final maxSid = (_ttsService.numSpeakers > 0) ? (_ttsService.numSpeakers - 1) : 0;
-      final sid = novelProvider.ttsSid.clamp(0, maxSid);
-      final speed = novelProvider.ttsSpeed;
-
-      for (var i = 0; i < paragraphs.length; i++) {
-        if (!mounted) return;
-        if (sessionId != _readingSessionId) return;
-
-        _readingParagraphIndex = i;
-        _readingHighlightTick.value++;
-
-        final audioData = await _ttsService.synthesizeText(
-          paragraphs[i],
-          sid: sid,
-          speed: speed,
-        );
-        if (sessionId != _readingSessionId) return;
-        if (audioData == null || audioData.isEmpty) continue;
-
-        await _audioPlayerService.playPcmAudioAndWait(
-          audioData,
-          sampleRate: _ttsService.lastSampleRate,
-        );
-      }
-    }).whenComplete(() {
-      if (!mounted) return;
-      if (sessionId != _readingSessionId) return;
-      _isReading = false;
-      _readingPageIndex = -1;
-      _readingParagraphIndex = -1;
-      _readingHighlightTick.value++;
-    });
-
-    await _readingTask;
   }
 
   /// 构建阅读器的文本样式
@@ -503,8 +387,8 @@ class _ReaderPageState extends State<ReaderPage> {
         body: WillPopScope(
           // 拦截系统返回手势和返回按钮
           onWillPop: () async {
-            if (_isReading || _audioPlayerService.isPlaying) {
-              await _stopReading();
+            if (_readAloud.isReading || _audioPlayerService.isPlaying) {
+              await _readAloud.stop();
               return false;
             }
             if (_showCatalogOverlay) {
@@ -633,102 +517,111 @@ class _ReaderPageState extends State<ReaderPage> {
                                       )
                                     : null,
                               ),
-                              child: PageView.builder(
-                                controller: pageController,
-                                itemCount: widget.controller.pages.length,
-                                physics: _getPageViewPhysics(novelProvider.readerTurnAnimation),
-                                onPageChanged: (index) {
-                                  final contentSize = _contentSize(c, novelProvider);
-                                  widget.controller.ensureMoreIfNeeded(
-                                    index,
-                                    contentSize,
-                                    textStyle,
-                                    paragraphSpacing: novelProvider.paragraphSpacing,
-                                  );
-
-                                  setState(() {
-                                    _currentPageIndex = index;
-                                    _currentChapterIndex = widget.controller.chapterIndexAtOffset(
-                                      widget.controller.pageRefAt(index).pageStartOffset,
+                              child: NotificationListener<ScrollNotification>(
+                                onNotification: (n) {
+                                  if (n is UserScrollNotification) {
+                                    _userScrollingPage = n.direction != ScrollDirection.idle;
+                                  }
+                                  return false;
+                                },
+                                child: PageView.builder(
+                                  controller: pageController,
+                                  itemCount: widget.controller.pages.length,
+                                  physics: _getPageViewPhysics(novelProvider.readerTurnAnimation),
+                                  onPageChanged: (index) {
+                                    final contentSize = _contentSize(c, novelProvider);
+                                    widget.controller.ensureMoreIfNeeded(
+                                      index,
+                                      contentSize,
+                                      textStyle,
+                                      paragraphSpacing: novelProvider.paragraphSpacing,
                                     );
-                                  });
 
-                                  if (_isReading || _audioPlayerService.isPlaying) {
+                                    setState(() {
+                                      _currentPageIndex = index;
+                                      _currentChapterIndex = widget.controller.chapterIndexAtOffset(
+                                        widget.controller.pageRefAt(index).pageStartOffset,
+                                      );
+                                    });
+
+                                    if (_readAloud.readingModeEnabled) {
+                                      final isAuto = _autoTurningPage;
+                                      final isManual = !isAuto && _userScrollingPage;
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        if (!mounted) return;
+                                        Future<void>(() async {
+                                          if (isManual) {
+                                            await _readAloud.handleManualPageChanged(index);
+                                          } else {
+                                            await _readAloud.handlePageChanged(index);
+                                          }
+                                        });
+                                      });
+                                    }
+
                                     WidgetsBinding.instance.addPostFrameCallback((_) {
                                       if (!mounted) return;
-                                      Future<void>(() async {
-                                        final wasReading = _isReading || _audioPlayerService.isPlaying;
-                                        await _stopReading();
-                                        if (!mounted) return;
-                                        if (wasReading) {
-                                          await _startReadingPage(index);
-                                        }
-                                      });
+                                      _persistProgress();
                                     });
-                                  }
-
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    if (!mounted) return;
-                                    _persistProgress();
-                                  });
-                                },
-                                itemBuilder: (_, i) {
-                                  final page = Padding(
-                                    padding: EdgeInsets.fromLTRB(
-                                      novelProvider.readerPaddingLeft,
-                                      novelProvider.readerPaddingTop,
-                                      novelProvider.readerPaddingRight,
-                                      novelProvider.readerPaddingBottom,
-                                    ),
-                                    child: ValueListenableBuilder<int>(
-                                      valueListenable: _readingHighlightTick,
-                                      builder: (context, _, __) {
-                                        final lines = widget.controller.pages[i];
-                                        // 只有当前朗读页才做高亮拼span，其他页保持简单Text以减少开销
-                                        if (!_isReading || _readingPageIndex != i) {
-                                          return Text(lines.join('\n'), style: textStyle);
-                                        }
-
-                                        final themeColor = novelProvider.themeColor;
-                                        final spans = <InlineSpan>[];
-                                        var spokenParagraphIdx = 0;
-
-                                        for (var li = 0; li < lines.length; li++) {
-                                          final raw = lines[li];
-                                          final trimmed = raw.trim();
-                                          final isParagraph = trimmed.isNotEmpty;
-                                          final shouldHighlight =
-                                              isParagraph && spokenParagraphIdx == _readingParagraphIndex;
-
-                                          final spanStyle = shouldHighlight
-                                              ? textStyle.copyWith(color: themeColor)
-                                              : textStyle;
-
-                                          spans.add(TextSpan(text: raw, style: spanStyle));
-                                          if (li != lines.length - 1) {
-                                            spans.add(const TextSpan(text: '\n'));
+                                  },
+                                  itemBuilder: (_, i) {
+                                    final page = Padding(
+                                      padding: EdgeInsets.fromLTRB(
+                                        novelProvider.readerPaddingLeft,
+                                        novelProvider.readerPaddingTop,
+                                        novelProvider.readerPaddingRight,
+                                        novelProvider.readerPaddingBottom,
+                                      ),
+                                      child: ValueListenableBuilder<int>(
+                                        valueListenable: _readAloud.highlightTick,
+                                        builder: (context, _, __) {
+                                          final lines = widget.controller.pages[i];
+                                          // 只有当前朗读页才做高亮拼span，其他页保持简单Text以减少开销
+                                          if (!_readAloud.isReading || _readAloud.readingPageIndex != i) {
+                                            return Text(lines.join('\n'), style: textStyle);
                                           }
 
-                                          if (isParagraph) {
-                                            spokenParagraphIdx++;
-                                          }
-                                        }
+                                          final themeColor = novelProvider.themeColor;
+                                          final spans = <InlineSpan>[];
+                                          var spokenParagraphIdx = 0;
 
-                                        return RichText(
-                                          text: TextSpan(children: spans),
-                                          textAlign: TextAlign.start,
-                                          textDirection: TextDirection.ltr,
-                                        );
-                                      },
-                                    ),
-                                  );
-                                  return ReaderTurnEffects.wrap(
-                                    animationName: novelProvider.readerTurnAnimation,
-                                    controller: pageController,
-                                    index: i,
-                                    child: page,
-                                  );
-                                },
+                                          for (var li = 0; li < lines.length; li++) {
+                                            final raw = lines[li];
+                                            final trimmed = raw.trim();
+                                            final isParagraph = trimmed.isNotEmpty;
+                                            final shouldHighlight =
+                                                isParagraph && spokenParagraphIdx == _readAloud.readingParagraphIndex;
+
+                                            final spanStyle = shouldHighlight
+                                                ? textStyle.copyWith(color: themeColor)
+                                                : textStyle;
+
+                                            spans.add(TextSpan(text: raw, style: spanStyle));
+                                            if (li != lines.length - 1) {
+                                              spans.add(const TextSpan(text: '\n'));
+                                            }
+
+                                            if (isParagraph) {
+                                              spokenParagraphIdx++;
+                                            }
+                                          }
+
+                                          return RichText(
+                                            text: TextSpan(children: spans),
+                                            textAlign: TextAlign.start,
+                                            textDirection: TextDirection.ltr,
+                                          );
+                                        },
+                                      ),
+                                    );
+                                    return ReaderTurnEffects.wrap(
+                                      animationName: novelProvider.readerTurnAnimation,
+                                      controller: pageController,
+                                      index: i,
+                                      child: page,
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           );
@@ -741,16 +634,16 @@ class _ReaderPageState extends State<ReaderPage> {
               // UI弹窗组件
               if (_showUIOverlay && _ready)
                 ValueListenableBuilder<int>(
-                  valueListenable: _readingHighlightTick,
+                  valueListenable: _readAloud.highlightTick,
                   builder: (context, _, __) {
                     return ReaderUIOverlay(
                       novelTitle: novel.title, // 小说标题
                       currentPage: _currentPageIndex + 1, // 当前页码（从1开始显示）
                       totalPages: widget.controller.pages.length, // 总页数
-                      isReading: _isReading || _audioPlayerService.isPlaying,
+                      isReading: _readAloud.isReading,
                       onBack: () {
                         // 返回上一页
-                        _stopReading();
+                        _readAloud.stop();
                         Navigator.pop(context);
                       },
                       onCatalog: () {
@@ -770,11 +663,11 @@ class _ReaderPageState extends State<ReaderPage> {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (!mounted) return;
                           Future<void>(() async {
-                            if (_isReading || _audioPlayerService.isPlaying) {
-                              await _stopReading();
+                            if (_readAloud.isReading) {
+                              await _readAloud.stop();
                               return;
                             }
-                            await _startReadingPage(_currentPageIndex);
+                            await _readAloud.startPage(_currentPageIndex);
                           });
                         });
                       },
