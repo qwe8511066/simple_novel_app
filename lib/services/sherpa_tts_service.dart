@@ -11,6 +11,8 @@ import 'tts_isolate_worker.dart';
 class SherpaTtsService {
   static bool _bindingsInitialized = false;
 
+  Future<bool>? _initializeFuture;
+
   OfflineTts? _tts;
   bool _isInitialized = false;
   int _lastSampleRate = 24000;
@@ -81,94 +83,109 @@ class SherpaTtsService {
 
   /// 初始化TTS服务
   Future<bool> initialize() async {
-    try {
-      print('开始初始化Sherpa TTS服务...');
+    if (_isInitialized) return true;
+    final inflight = _initializeFuture;
+    if (inflight != null) return inflight;
 
-      if (!_bindingsInitialized) {
-        initBindings();
-        _bindingsInitialized = true;
-      }
+    final f = Future<bool>(() async {
+      try {
+        print('开始初始化Sherpa TTS服务...');
 
-      // 获取应用文档目录
-      final documentsDir = await getApplicationDocumentsDirectory();
-      final modelsDir = Directory('${documentsDir.path}/models');
+        if (!_bindingsInitialized) {
+          initBindings();
+          _bindingsInitialized = true;
+        }
 
-      // 确保模型目录存在
-      if (!await modelsDir.exists()) {
-        await modelsDir.create(recursive: true);
-      }
+        // 获取应用文档目录
+        final documentsDir = await getApplicationDocumentsDirectory();
+        final modelsDir = Directory('${documentsDir.path}/models');
 
-      // 复制模型文件到应用目录
-      final modelPath = await _extractModelToAppDir();
-      if (modelPath == null) {
-        print('模型文件提取失败');
-        return false;
-      }
+        // 确保模型目录存在
+        if (!await modelsDir.exists()) {
+          await modelsDir.create(recursive: true);
+        }
 
-      print('模型文件路径: $modelPath');
+        // 复制模型文件到应用目录
+        final modelPath = await _extractModelToAppDir();
+        if (modelPath == null) {
+          print('模型文件提取失败');
+          return false;
+        }
 
-      final modelDirPath = File(modelPath).parent.path;
-      final tokensPath = '$modelDirPath/tokens.txt';
-      final lexiconPath = '$modelDirPath/lexicon.txt';
-      final vocoderPath = '$modelDirPath/vocos.onnx';
-      final espeakDataDirPath = '$modelDirPath/espeak-ng-data';
+        print('模型文件路径: $modelPath');
 
-      _modelPath = modelPath;
-      _tokensPath = tokensPath;
-      _lexiconPath = lexiconPath;
-      _vocoderPath = vocoderPath;
-      _espeakDataDirPath = espeakDataDirPath;
+        final modelDirPath = File(modelPath).parent.path;
+        final tokensPath = '$modelDirPath/tokens.txt';
+        final lexiconPath = '$modelDirPath/lexicon.txt';
+        final vocoderPath = '$modelDirPath/vocos.onnx';
+        final espeakDataDirPath = '$modelDirPath/espeak-ng-data';
 
-      if (!await File(modelPath).exists()) {
-        print('模型文件不存在: $modelPath');
-        return false;
-      }
+        _modelPath = modelPath;
+        _tokensPath = tokensPath;
+        _lexiconPath = lexiconPath;
+        _vocoderPath = vocoderPath;
+        _espeakDataDirPath = espeakDataDirPath;
 
-      if (!await File(tokensPath).exists()) {
-        print('Tokens文件不存在: $tokensPath');
-        return false;
-      }
+        if (!await File(modelPath).exists()) {
+          print('模型文件不存在: $modelPath');
+          return false;
+        }
 
-      if (!await File(lexiconPath).exists()) {
-        print('Lexicon文件不存在: $lexiconPath');
-        return false;
-      }
+        if (!await File(tokensPath).exists()) {
+          print('Tokens文件不存在: $tokensPath');
+          return false;
+        }
 
-      if (!await File(vocoderPath).exists()) {
-        print('Vocoder文件不存在: $vocoderPath');
-        return false;
-      }
+        if (!await File(lexiconPath).exists()) {
+          print('Lexicon文件不存在: $lexiconPath');
+          return false;
+        }
 
-      if (!await Directory(espeakDataDirPath).exists()) {
-        print('espeak-ng-data目录不存在: $espeakDataDirPath');
-        return false;
-      }
+        if (!await File(vocoderPath).exists()) {
+          print('Vocoder文件不存在: $vocoderPath');
+          return false;
+        }
 
-      // 创建TTS配置
-      final config = OfflineTtsConfig(
-        model: OfflineTtsModelConfig(
-          matcha: OfflineTtsMatchaModelConfig(
-            acousticModel: modelPath,
-            vocoder: vocoderPath,
-            tokens: tokensPath,
-            dataDir: espeakDataDirPath,
-            lexicon: lexiconPath,
+        if (!await Directory(espeakDataDirPath).exists()) {
+          print('espeak-ng-data目录不存在: $espeakDataDirPath');
+          return false;
+        }
+
+        // 创建TTS配置
+        final config = OfflineTtsConfig(
+          model: OfflineTtsModelConfig(
+            matcha: OfflineTtsMatchaModelConfig(
+              acousticModel: modelPath,
+              vocoder: vocoderPath,
+              tokens: tokensPath,
+              dataDir: espeakDataDirPath,
+              lexicon: lexiconPath,
+            ),
           ),
-        ),
-      );
+        );
 
-      // 创建TTS实例
-      _tts = OfflineTts(config);
+        // 创建TTS实例
+        _tts = OfflineTts(config);
 
-      _isInitialized = true;
-      print('TTS服务初始化成功');
+        _isInitialized = true;
+        print('TTS服务初始化成功');
 
-      await _ensureWorkerInitialized();
-      return true;
-    } catch (e) {
-      print('TTS初始化失败: $e');
-      _isInitialized = false;
-      return false;
+        await _ensureWorkerInitialized();
+        return true;
+      } catch (e) {
+        print('TTS初始化失败: $e');
+        _isInitialized = false;
+        return false;
+      }
+    });
+
+    _initializeFuture = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_initializeFuture, f)) {
+        _initializeFuture = null;
+      }
     }
   }
 
@@ -511,6 +528,7 @@ class SherpaTtsService {
 
   /// 释放资源
   Future<void> dispose() async {
+    _initializeFuture = null;
     _tts = null;
     _isInitialized = false;
 
