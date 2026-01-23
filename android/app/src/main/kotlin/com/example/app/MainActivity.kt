@@ -1,11 +1,6 @@
 package com.example.app
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.view.KeyEvent
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -15,9 +10,6 @@ class MainActivity : FlutterActivity() {
   private var channel: MethodChannel? = null
   private var volumeKeysEnabled = false // 控制音量键是否被拦截
   private var volumeKeyInterceptCondition = true // 额外的拦截条件
-
-  private val notificationPermissionChannel = "com.example.app/notification_permission"
-  private val notificationPermissionRequestCode = 10001
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
@@ -33,32 +25,6 @@ class MainActivity : FlutterActivity() {
         "updateVolumeKeyStatus" -> {
           volumeKeyInterceptCondition = call.argument<Boolean>("shouldIntercept") ?: true
           result.success(null)
-        }
-        else -> result.notImplemented()
-      }
-    }
-
-    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, notificationPermissionChannel).setMethodCallHandler { call, result ->
-      when (call.method) {
-        "request" -> {
-          if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            result.success(true)
-            return@setMethodCallHandler
-          }
-          val granted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.POST_NOTIFICATIONS
-          ) == PackageManager.PERMISSION_GRANTED
-          if (granted) {
-            result.success(true)
-            return@setMethodCallHandler
-          }
-          ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-            notificationPermissionRequestCode
-          )
-          result.success(false)
         }
         else -> result.notImplemented()
       }

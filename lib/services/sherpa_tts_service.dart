@@ -51,7 +51,7 @@ class SherpaTtsService {
   Future<void> _copyAssetDirToDisk({
     required String assetDirPrefix,
     required String destDirPath,
-    bool forceCopy = false,
+    bool forceCopy = true,
   }) async {
     final destDir = Directory(destDirPath);
     if (!await destDir.exists()) {
@@ -515,7 +515,7 @@ class SherpaTtsService {
         await _copyAssetDirToDisk(
           assetDirPrefix: 'assets/models/espeak-ng-data/',
           destDirPath: espeakDataDir.path,
-          forceCopy: false,
+          forceCopy: true,
         );
       }
 

@@ -4,8 +4,6 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'tts_audio_handler.dart';
-
 class AudioPlayerService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
@@ -103,23 +101,7 @@ class AudioPlayerService {
 
   /// 播放WAV文件并等待播放完成
   Future<void> playWavFileAndWait(String filePath) async {
-    // Prefer audio_service so Android can show media notification / lockscreen controls
-    // and playback can continue in background.
-    try {
-      var handler = ttsAudioHandler;
-      if (handler == null) {
-        handler = await ensureTtsAudioServiceReady();
-      }
-      await handler.playWavFileAndWait(filePath);
-      _isPlaying = false;
-      print('Using audio_service for playback');
-      return;
-    } catch (e) {
-      print('audio_service playback unavailable, fallback to audioplayers: $e');
-      // Fallback to audioplayers if audio_service isn't ready (e.g., init failure).
-    }
-
-    // Removed await stop();
+    await stop();
 
     final completer = Completer<void>();
 
@@ -147,12 +129,6 @@ class AudioPlayerService {
   /// 停止当前播放
   Future<void> stop() async {
     try {
-      try {
-        final handler = ttsAudioHandler;
-        if (handler != null) {
-          await handler.stop();
-        }
-      } catch (_) {}
       await _audioPlayer.stop();
       _isPlaying = false;
     } catch (e) {
@@ -163,12 +139,6 @@ class AudioPlayerService {
   /// 暂停当前播放
   Future<void> pause() async {
     try {
-      try {
-        final handler = ttsAudioHandler;
-        if (handler != null) {
-          await handler.pause();
-        }
-      } catch (_) {}
       await _audioPlayer.pause();
       _isPlaying = false;
     } catch (e) {
@@ -179,14 +149,6 @@ class AudioPlayerService {
   /// 恢复播放
   Future<void> resume() async {
     try {
-      try {
-        final handler = ttsAudioHandler;
-        if (handler != null) {
-          await handler.play();
-          _isPlaying = true;
-          return;
-        }
-      } catch (_) {}
       await _audioPlayer.resume();
       _isPlaying = true;
     } catch (e) {

@@ -15,7 +15,7 @@ class _TtsTestPageState extends State<TtsTestPage> {
   final AudioPlayerService _audioPlayerService = AudioPlayerService();
 
   final TextEditingController _textController = TextEditingController(
-    text: '不像大多数现代人腊月二十八还不得不辛苦的坚守岗位，二十九才能拼命抢张火车票回家',
+    text: '第三千零八十七章野生的？不，这是我散养的',
   );
 
   bool _ttsInitialized = false;
