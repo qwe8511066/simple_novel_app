@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:app/pages/reader/reader_controller.dart';
 import 'providers/novel_provider.dart';
@@ -7,9 +8,26 @@ import 'pages/reader/reader_page.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'utils/smoothSlideTransitionBuilder.dart';
+import 'services/tts_audio_handler.dart';
+
+const MethodChannel _notificationPermissionChannel =
+    MethodChannel('com.example.app/notification_permission');
+
+Future<void> _requestNotificationPermissionIfNeeded() async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _notificationPermissionChannel.invokeMethod('request');
+  } catch (_) {}
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _requestNotificationPermissionIfNeeded();
+  try {
+    await initTtsAudioService();
+  } catch (e, st) {
+    debugPrint('initTtsAudioService failed (will lazy-init on first playback): $e\n$st');
+  }
   runApp(
     ChangeNotifierProvider(
       create: (context) => NovelProvider(),

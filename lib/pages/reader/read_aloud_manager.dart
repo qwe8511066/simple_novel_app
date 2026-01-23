@@ -12,27 +12,27 @@ class ReadAloudManager {
     required NovelProvider Function() novelProvider,
     required SherpaTtsService ttsService,
     required AudioPlayerService audioPlayerService,
-    required int Function() currentPageIndex,
     required int Function() totalPages,
     required List<String> Function(int pageIndex) pageParagraphs,
     required Future<void> Function(int nextPageIndex) turnToPage,
+    Future<void> Function(int pageIndex)? ensurePageAvailable,
     int prefetchNextPages = 2,
   })  : _novelProvider = novelProvider,
         _ttsService = ttsService,
         _audioPlayerService = audioPlayerService,
-        _currentPageIndex = currentPageIndex,
         _totalPages = totalPages,
         _pageParagraphs = pageParagraphs,
         _turnToPage = turnToPage,
+        _ensurePageAvailable = ensurePageAvailable,
         _prefetchNextPages = prefetchNextPages;
 
   final NovelProvider Function() _novelProvider;
   final SherpaTtsService _ttsService;
   final AudioPlayerService _audioPlayerService;
-  final int Function() _currentPageIndex;
   final int Function() _totalPages;
   final List<String> Function(int pageIndex) _pageParagraphs;
   final Future<void> Function(int nextPageIndex) _turnToPage;
+  final Future<void> Function(int pageIndex)? _ensurePageAvailable;
   final int _prefetchNextPages;
 
   bool _ttsInitialized = false;
@@ -124,6 +124,12 @@ class ReadAloudManager {
     _highlightTick.value++;
 
     _readingTask = Future<void>(() async {
+      final ensure = _ensurePageAvailable;
+      if (ensure != null) {
+        try {
+          await ensure(pageIndex);
+        } catch (_) {}
+      }
       final paragraphs = _pageParagraphs(pageIndex);
       if (paragraphs.isEmpty) return;
 
@@ -218,7 +224,13 @@ class ReadAloudManager {
 
       if (shouldContinue) {
         Future<void>(() async {
-          final next = _currentPageIndex() + 1;
+          final ensure = _ensurePageAvailable;
+          final next = pageIndex + 1;
+          if (ensure != null) {
+            try {
+              await ensure(next);
+            } catch (_) {}
+          }
           if (next >= _totalPages()) return;
           if (sessionId != _readingSessionId) return;
           if (!_readingModeEnabled) return;
@@ -234,6 +246,7 @@ class ReadAloudManager {
             );
           }
           await _turnToPage(next);
+          await startPage(next);
         });
       }
     });

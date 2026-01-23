@@ -78,9 +78,19 @@ class _ReaderPageState extends State<ReaderPage> {
       novelProvider: () => Provider.of<NovelProvider>(context, listen: false),
       ttsService: _ttsService,
       audioPlayerService: _audioPlayerService,
-      currentPageIndex: () => _currentPageIndex,
       totalPages: () => widget.controller.pages.length,
       pageParagraphs: _currentPageParagraphs,
+      ensurePageAvailable: (pageIndex) async {
+        final layoutSize = _lastContentSize;
+        final textStyle = _lastTextStyle;
+        if (layoutSize == null || textStyle == null) return;
+        await widget.controller.ensureMoreIfNeeded(
+          pageIndex,
+          layoutSize,
+          textStyle,
+          paragraphSpacing: Provider.of<NovelProvider>(context, listen: false).paragraphSpacing,
+        );
+      },
       turnToPage: (nextPage) async {
         if (!mounted) return;
         final pc = _pageController;
