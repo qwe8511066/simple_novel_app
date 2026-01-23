@@ -99,6 +99,33 @@ class AudioPlayerService {
     }
   }
 
+  /// 播放WAV文件并等待播放完成
+  Future<void> playWavFileAndWait(String filePath) async {
+    await stop();
+
+    final completer = Completer<void>();
+
+    await _completeSub?.cancel();
+    _completeSub = _audioPlayer.onPlayerComplete.listen((_) {
+      _isPlaying = false;
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
+
+    try {
+      await _audioPlayer.play(DeviceFileSource(filePath));
+      _isPlaying = true;
+      await completer.future;
+    } catch (e) {
+      _isPlaying = false;
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
+      rethrow;
+    }
+  }
+
   /// 停止当前播放
   Future<void> stop() async {
     try {

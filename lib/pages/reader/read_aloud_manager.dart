@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -52,8 +53,8 @@ class ReadAloudManager {
   int get readingPageIndex => _readingPageIndex;
   int get readingParagraphIndex => _readingParagraphIndex;
 
-  final Map<String, List<double>> _ttsCache = <String, List<double>>{};
-  final Map<String, Future<List<double>?>> _ttsInFlight = <String, Future<List<double>?>>{};
+  final Map<String, String> _ttsCache = <String, String>{};
+  final Map<String, Future<String?>> _ttsInFlight = <String, Future<String?>>{};
   final List<String> _ttsCacheOrder = <String>[];
   static const int _ttsCacheMaxEntries = 24;
 
@@ -65,6 +66,16 @@ class ReadAloudManager {
 
   void dispose() {
     stop();
+    for (final p in _ttsCache.values) {
+      try {
+        final f = File(p);
+        if (f.existsSync()) {
+          f.deleteSync();
+        }
+      } catch (_) {}
+    }
+    _ttsCache.clear();
+    _ttsCacheOrder.clear();
     _highlightTick.dispose();
   }
 
@@ -127,7 +138,7 @@ class ReadAloudManager {
       _lastSid = sid;
       _lastSpeed = speed;
 
-      final synthQueue = List<Future<List<double>?>>.generate(
+      final synthQueue = List<Future<String?>>.generate(
         paragraphs.length,
         (i) async => null,
       );
@@ -166,20 +177,17 @@ class ReadAloudManager {
           scheduleUpTo(i + 1);
         }
 
-        List<double>? audioData;
+        String? wavPath;
         try {
-          audioData = await synthQueue[i];
+          wavPath = await synthQueue[i];
         } catch (_) {
-          audioData = null;
+          wavPath = null;
         }
 
         if (sessionId != _readingSessionId) return;
-        if (audioData == null || audioData.isEmpty) continue;
+        if (wavPath == null || wavPath.isEmpty) continue;
 
-        await _audioPlayerService.playPcmAudioAndWait(
-          audioData,
-          sampleRate: _ttsService.lastSampleRate,
-        );
+        await _audioPlayerService.playWavFileAndWait(wavPath);
 
         // Prefetch is CPU-heavy (runs on main isolate). Trigger it only after we've
         // already started reading a bit, to avoid causing a pause right after page turn.
@@ -340,17 +348,25 @@ class ReadAloudManager {
     return '$sid|$speed|$normalized';
   }
 
-  void _putTtsCache(String key, List<double> audio) {
+  void _putTtsCachePath(String key, String path) {
     if (_ttsCache.containsKey(key)) return;
-    _ttsCache[key] = audio;
+    _ttsCache[key] = path;
     _ttsCacheOrder.add(key);
     if (_ttsCacheOrder.length > _ttsCacheMaxEntries) {
       final oldest = _ttsCacheOrder.removeAt(0);
-      _ttsCache.remove(oldest);
+      final p = _ttsCache.remove(oldest);
+      if (p != null) {
+        try {
+          final f = File(p);
+          if (f.existsSync()) {
+            f.deleteSync();
+          }
+        } catch (_) {}
+      }
     }
   }
 
-  Future<List<double>?> _synthesizeWithCache(
+  Future<String?> _synthesizeWithCache(
     String text, {
     required int sid,
     required double speed,
@@ -362,16 +378,16 @@ class ReadAloudManager {
     final inflight = _ttsInFlight[key];
     if (inflight != null) return inflight;
 
-    final f = Future<List<double>?>(() async {
-      final audio = await _ttsService.synthesizeText(
+    final f = Future<String?>(() async {
+      final path = await _ttsService.synthesizeToWavFile(
         _normalizeCacheText(text),
         sid: sid,
         speed: speed,
       );
-      if (audio != null && audio.isNotEmpty) {
-        _putTtsCache(key, audio);
+      if (path != null && path.isNotEmpty) {
+        _putTtsCachePath(key, path);
       }
-      return audio;
+      return path;
     });
 
     _ttsInFlight[key] = f;

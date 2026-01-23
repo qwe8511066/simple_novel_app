@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:isolate';
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
+
+import 'tts_isolate_worker.dart';
 
 class SherpaTtsService {
   static bool _bindingsInitialized = false;
@@ -11,8 +15,23 @@ class SherpaTtsService {
   bool _isInitialized = false;
   int _lastSampleRate = 24000;
 
+  SendPort? _workerSendPort;
+  ReceivePort? _workerReceivePort;
+  Isolate? _workerIsolate;
+  int _workerMsgId = 0;
+  final Map<int, Completer<Map<String, dynamic>>> _workerPending =
+      <int, Completer<Map<String, dynamic>>>{};
+
+  String? _modelPath;
+  String? _tokensPath;
+  String? _lexiconPath;
+  String? _vocoderPath;
+  String? _espeakDataDirPath;
+
   int get numSpeakers => _tts?.numSpeakers ?? 0;
   int get lastSampleRate => _lastSampleRate;
+
+  bool get isolateReady => _workerSendPort != null;
 
   Future<List<String>> _listAllAssetKeys() async {
     // AssetManifest.json tends to be the most universally available format.
@@ -23,7 +42,7 @@ class SherpaTtsService {
     } catch (_) {
       // Fall back to the newer AssetManifest API if json is unavailable.
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      return (await manifest.listAssets()).toList(growable: false);
+      return manifest.listAssets().toList(growable: false);
     }
   }
 
@@ -94,6 +113,12 @@ class SherpaTtsService {
       final vocoderPath = '$modelDirPath/vocos.onnx';
       final espeakDataDirPath = '$modelDirPath/espeak-ng-data';
 
+      _modelPath = modelPath;
+      _tokensPath = tokensPath;
+      _lexiconPath = lexiconPath;
+      _vocoderPath = vocoderPath;
+      _espeakDataDirPath = espeakDataDirPath;
+
       if (!await File(modelPath).exists()) {
         print('模型文件不存在: $modelPath');
         return false;
@@ -137,6 +162,8 @@ class SherpaTtsService {
 
       _isInitialized = true;
       print('TTS服务初始化成功');
+
+      await _ensureWorkerInitialized();
       return true;
     } catch (e) {
       print('TTS初始化失败: $e');
@@ -145,86 +172,122 @@ class SherpaTtsService {
     }
   }
 
-  /// 提取模型文件到应用目录
-  Future<String?> _extractModelToAppDir() async {
-    try {
-      final documentsDir = await getApplicationDocumentsDirectory();
-      final modelsDir = Directory('${documentsDir.path}/models');
+  Future<void> _ensureWorkerInitialized() async {
+    if (_workerSendPort != null) return;
+    final modelPath = _modelPath;
+    final tokensPath = _tokensPath;
+    final lexiconPath = _lexiconPath;
+    final vocoderPath = _vocoderPath;
+    final espeakDataDirPath = _espeakDataDirPath;
+    if (modelPath == null ||
+        tokensPath == null ||
+        lexiconPath == null ||
+        vocoderPath == null ||
+        espeakDataDirPath == null) {
+      return;
+    }
 
-      // 确保模型目录存在
-      if (!await modelsDir.exists()) {
-        await modelsDir.create(recursive: true);
+    final ready = Completer<void>();
+    final receive = ReceivePort();
+    _workerReceivePort = receive;
+
+    receive.listen((dynamic message) {
+      if (message is SendPort) {
+        _workerSendPort = message;
+        if (!ready.isCompleted) {
+          ready.complete();
+        }
+        return;
       }
-
-      // 检查模型文件是否已经存在
-      final modelDestPath = '${modelsDir.path}/model.onnx';
-      final modelFile = File(modelDestPath);
-
-      final vocoderDestPath = '${modelsDir.path}/vocos.onnx';
-      final vocoderFile = File(vocoderDestPath);
-
-      // 同样处理tokens文件
-      final tokensDestPath = '${modelsDir.path}/tokens.txt';
-      final tokensFile = File(tokensDestPath);
-
-      final lexiconDestPath = '${modelsDir.path}/lexicon.txt';
-      final lexiconFile = File(lexiconDestPath);
-
-      final espeakDataDir = Directory('${modelsDir.path}/espeak-ng-data');
-
-      if (!await modelFile.exists()) {
-        // 从assets复制模型文件
-        final modelAssetPath = 'assets/models/model.onnx';
-        final ByteData modelData = await rootBundle.load(modelAssetPath);
-        final List<int> modelBytes = modelData.buffer.asUint8List();
-        await modelFile.writeAsBytes(modelBytes);
-        print('模型文件已复制到: $modelDestPath');
-      } else {
-        print('模型文件已存在于: $modelDestPath');
+      if (message is Map) {
+        final m = message.cast<String, dynamic>();
+        final id = m['id'];
+        if (id is int) {
+          final c = _workerPending.remove(id);
+          c?.complete(m);
+        }
       }
+    });
 
-      if (!await vocoderFile.exists()) {
-        final vocoderAssetPath = 'assets/models/vocos.onnx';
-        final vocoderData = await rootBundle.load(vocoderAssetPath);
-        await vocoderFile.writeAsBytes(vocoderData.buffer.asUint8List());
-        print('Vocoder文件已复制到: $vocoderDestPath');
-      } else {
-        print('Vocoder文件已存在于: $vocoderDestPath');
-      }
+    _workerIsolate = await Isolate.spawn(
+      TtsIsolateWorker.entryPoint,
+      receive.sendPort,
+    );
 
-      if (!await tokensFile.exists()) {
-        final tokensAssetPath = 'assets/models/tokens.txt';
-        final tokensData = await rootBundle.load(tokensAssetPath);
-        final tokensBytes = tokensData.buffer.asUint8List();
-        await tokensFile.writeAsBytes(tokensBytes);
-        print('Tokens文件已复制到: $tokensDestPath');
-      } else {
-        print('Tokens文件已存在于: $tokensDestPath');
-      }
+    await ready.future;
+    final sendPort = _workerSendPort;
+    if (sendPort == null) return;
 
-      if (!await lexiconFile.exists()) {
-        final lexiconAssetPath = 'assets/models/lexicon.txt';
-        final lexiconData = await rootBundle.load(lexiconAssetPath);
-        final lexiconBytes = lexiconData.buffer.asUint8List();
-        await lexiconFile.writeAsBytes(lexiconBytes);
-        print('Lexicon文件已复制到: $lexiconDestPath');
-      } else {
-        print('Lexicon文件已存在于: $lexiconDestPath');
-      }
+    final resp = await _workerRequest(<String, dynamic>{
+      'type': 'init',
+      'model': modelPath,
+      'tokens': tokensPath,
+      'lexicon': lexiconPath,
+      'vocoder': vocoderPath,
+      'dataDir': espeakDataDirPath,
+    });
 
-      if (!await espeakDataDir.exists()) {
-        await _copyAssetDirToDisk(
-          assetDirPrefix: 'assets/models/espeak-ng-data/',
-          destDirPath: espeakDataDir.path,
-          forceCopy: false,
-        );
-      }
+    if (resp['ok'] != true) {
+      _workerSendPort = null;
+    }
+  }
 
-      return modelDestPath;
-    } catch (e) {
-      print('提取模型文件失败: $e');
+  Future<Map<String, dynamic>> _workerRequest(Map<String, dynamic> msg) async {
+    final sendPort = _workerSendPort;
+    final receive = _workerReceivePort;
+    if (sendPort == null || receive == null) {
+      return <String, dynamic>{'ok': false, 'error': 'Worker not ready'};
+    }
+
+    final id = ++_workerMsgId;
+    final c = Completer<Map<String, dynamic>>();
+    _workerPending[id] = c;
+
+    sendPort.send(<String, dynamic>{
+      ...msg,
+      'id': id,
+      'replyTo': receive.sendPort,
+    });
+
+    return c.future;
+  }
+
+  Future<String?> synthesizeToWavFile(
+    String text, {
+    int sid = 0,
+    double speed = 1.0,
+  }) async {
+    if (!_isInitialized) {
+      print('TTS服务未初始化');
       return null;
     }
+
+    await _ensureWorkerInitialized();
+    if (_workerSendPort == null) {
+      return null;
+    }
+
+    final normalizedText = _normalizeNumbersForZh(text);
+    final tmp = await getTemporaryDirectory();
+    final safeId = normalizedText.hashCode;
+    final outPath = '${tmp.path}/tts_${sid}_${speed}_${safeId}.wav';
+
+    final resp = await _workerRequest(<String, dynamic>{
+      'type': 'synthesizeToWav',
+      'text': normalizedText,
+      'sid': sid,
+      'speed': speed,
+      'outPath': outPath,
+    });
+
+    if (resp['ok'] == true) {
+      final sr = resp['sampleRate'];
+      if (sr is int) {
+        _lastSampleRate = sr;
+      }
+      return resp['path'] as String?;
+    }
+    return null;
   }
 
   /// 合成文本为音频
@@ -364,9 +427,116 @@ class SherpaTtsService {
     return b.toString();
   }
 
+  /// 提取模型文件到应用目录
+  Future<String?> _extractModelToAppDir() async {
+    try {
+      final documentsDir = await getApplicationDocumentsDirectory();
+      final modelsDir = Directory('${documentsDir.path}/models');
+
+      // 确保模型目录存在
+      if (!await modelsDir.exists()) {
+        await modelsDir.create(recursive: true);
+      }
+
+      // 检查模型文件是否已经存在
+      final modelDestPath = '${modelsDir.path}/model.onnx';
+      final modelFile = File(modelDestPath);
+
+      final vocoderDestPath = '${modelsDir.path}/vocos.onnx';
+      final vocoderFile = File(vocoderDestPath);
+
+      // 同样处理tokens文件
+      final tokensDestPath = '${modelsDir.path}/tokens.txt';
+      final tokensFile = File(tokensDestPath);
+
+      final lexiconDestPath = '${modelsDir.path}/lexicon.txt';
+      final lexiconFile = File(lexiconDestPath);
+
+      final espeakDataDir = Directory('${modelsDir.path}/espeak-ng-data');
+
+      if (!await modelFile.exists()) {
+        // 从assets复制模型文件
+        final modelAssetPath = 'assets/models/model.onnx';
+        final ByteData modelData = await rootBundle.load(modelAssetPath);
+        final List<int> modelBytes = modelData.buffer.asUint8List();
+        await modelFile.writeAsBytes(modelBytes);
+        print('模型文件已复制到: $modelDestPath');
+      } else {
+        print('模型文件已存在于: $modelDestPath');
+      }
+
+      if (!await vocoderFile.exists()) {
+        final vocoderAssetPath = 'assets/models/vocos.onnx';
+        final vocoderData = await rootBundle.load(vocoderAssetPath);
+        await vocoderFile.writeAsBytes(vocoderData.buffer.asUint8List());
+        print('Vocoder文件已复制到: $vocoderDestPath');
+      } else {
+        print('Vocoder文件已存在于: $vocoderDestPath');
+      }
+
+      if (!await tokensFile.exists()) {
+        final tokensAssetPath = 'assets/models/tokens.txt';
+        final tokensData = await rootBundle.load(tokensAssetPath);
+        final tokensBytes = tokensData.buffer.asUint8List();
+        await tokensFile.writeAsBytes(tokensBytes);
+        print('Tokens文件已复制到: $tokensDestPath');
+      } else {
+        print('Tokens文件已存在于: $tokensDestPath');
+      }
+
+      if (!await lexiconFile.exists()) {
+        final lexiconAssetPath = 'assets/models/lexicon.txt';
+        final lexiconData = await rootBundle.load(lexiconAssetPath);
+        final lexiconBytes = lexiconData.buffer.asUint8List();
+        await lexiconFile.writeAsBytes(lexiconBytes);
+        print('Lexicon文件已复制到: $lexiconDestPath');
+      } else {
+        print('Lexicon文件已存在于: $lexiconDestPath');
+      }
+
+      if (!await espeakDataDir.exists()) {
+        await _copyAssetDirToDisk(
+          assetDirPrefix: 'assets/models/espeak-ng-data/',
+          destDirPath: espeakDataDir.path,
+          forceCopy: false,
+        );
+      }
+
+      return modelDestPath;
+    } catch (e) {
+      print('提取模型文件失败: $e');
+      return null;
+    }
+  }
+
   /// 释放资源
   Future<void> dispose() async {
     _tts = null;
     _isInitialized = false;
+
+    try {
+      final sendPort = _workerSendPort;
+      if (sendPort != null && _workerReceivePort != null) {
+        unawaited(_workerRequest(<String, dynamic>{'type': 'dispose'}));
+      }
+    } catch (_) {}
+
+    for (final c in _workerPending.values) {
+      if (!c.isCompleted) {
+        c.complete(<String, dynamic>{'ok': false, 'error': 'disposed'});
+      }
+    }
+    _workerPending.clear();
+
+    _workerReceivePort?.close();
+    _workerReceivePort = null;
+
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    _workerIsolate = null;
+    _workerSendPort = null;
+  }
+
+  void unawaited(Future<void> f) {
+    f.catchError((_) {});
   }
 }
