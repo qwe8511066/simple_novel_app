@@ -586,21 +586,17 @@ class _ReaderPageState extends State<ReaderPage> {
                                         valueListenable: _readAloud.highlightTick,
                                         builder: (context, _, __) {
                                           final lines = widget.controller.pages[i];
-                                          // 只有当前朗读页才做高亮拼span，其他页保持简单Text以减少开销
-                                          if (!_readAloud.isReading || _readAloud.readingPageIndex != i) {
-                                            return Text(lines.join('\n'), style: textStyle);
-                                          }
-
                                           final themeColor = novelProvider.themeColor;
                                           final spans = <InlineSpan>[];
                                           var spokenParagraphIdx = 0;
+                                          final isReadingThisPage = _readAloud.isReading && _readAloud.readingPageIndex == i;
 
                                           for (var li = 0; li < lines.length; li++) {
                                             final raw = lines[li];
                                             final trimmed = raw.trim();
                                             final isParagraph = trimmed.isNotEmpty;
                                             final shouldHighlight =
-                                                isParagraph && spokenParagraphIdx == _readAloud.readingParagraphIndex;
+                                                isParagraph && isReadingThisPage && spokenParagraphIdx == _readAloud.readingParagraphIndex;
 
                                             final spanStyle = shouldHighlight
                                                 ? textStyle.copyWith(color: themeColor)
